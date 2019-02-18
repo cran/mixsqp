@@ -1,10 +1,11 @@
 # mixsqp: R package for fast maximum-likelihood estimation of mixture proportions using sequential quadratic programming
 
+[![CRAN status badge](https://www.r-pkg.org/badges/version/mixsqp)](https://cran.r-project.org/package=mixsqp)
 [![Travis Build Status](https://travis-ci.org/stephenslab/mixsqp.svg?branch=master)](https://travis-ci.org/stephenslab/mixsqp)
 [![Appveyor Build status](https://ci.appveyor.com/api/projects/status/i8744qet66w5uhe2?svg=true)](https://ci.appveyor.com/project/pcarbo/mixsqp)
 [![codecov](https://codecov.io/gh/stephenslab/mixsqp/branch/master/graph/badge.svg)](https://codecov.io/gh/stephenslab/mixsqp)
 
-The mixsqp R package provides algorithms based on [sequential
+The mixsqp R package provides algorithms based on [sequential 
 quadratic programming][sqp] for maximum likelihood estimation of the
 mixture proportions in a finite mixture model where the component
 densities are known. The SQP algorithm is expected to obtain solutions
@@ -13,7 +14,7 @@ interior-point solver (called via the "KWDual" function in the
 [REBayes package][rebayes]), and is expected to compute these
 solutions much more quickly in large data sets.
 
-For more details on the SQP algorithm, please see [our paper on
+For more details on the SQP algorithm, please see [our paper on 
 arXiv][arxiv-paper].
 
 See also the [Julia implementation][mixsqp-julia], which, at time of
@@ -44,11 +45,10 @@ file [LICENSE](LICENSE) for the full text of the license.
 
 ## Quick Start
 
-Install the latest version of the mixsqp package from GitHub:
+Install mixsqp from [CRAN](http://www.r-pkg.org/pkg/varbvs):
 
 ```R
-devtools::install_github("stephenslab/mixsqp",
-                         upgrade_dependencies = FALSE)
+install.packages("mixsqp")
 ```
 
 For more detailed installation instructions, see the "Setup" section
@@ -79,28 +79,34 @@ help("mixsqp")
 
 ## Setup
 
-To install the latest version of the mixsqp package from GitHub,
-use [devtools][devtools]:
+To install mixsqp from [CRAN](http://www.r-pkg.org/pkg/varbvs), in R
+run:
+
+```R
+install.packages("mixsqp")
+```
+
+Alternatively, to install the latest version of the mixsqp package
+from GitHub, use [devtools][devtools]:
 
 ```R
 install.packages("devtools")
 library(devtools)
-install_github("stephenslab/mixsqp",build_vignettes = TRUE,
-               upgrade_dependencies = FALSE)
+install_github("stephenslab/mixsqp")
 ```
 
 This command should automatically install all required packages if
 they are not installed already.
 
-Alternatively, if you have cloned the repository locally, you can
-install the package with the `install_local` function from
-devtools. Assuming your working directory contains the mixsqp
-repository, run this code to install the package:
+If you have cloned the repository locally, you can install the package
+with the `install_local` function from devtools. Assuming your working
+directory contains the mixsqp repository, run this code to install the
+package:
 
 ```R
 library(devtools)
 list.files(pattern = "mixsqp") # Should output "mixsqp".
-install_local("mixsqp",build_vignettes = TRUE,upgrade_dependencies = FALSE)
+install_local("mixsqp")
 ```
 
 ### Additional setup notes
@@ -121,9 +127,7 @@ correctly installed. Installation of the REBayes package also allows
 you to build [the vignette][mixsqp-vignette] and view it locally:
 
 ```R
-devtools::install_github("stephenslab/mixsqp",
-                         build_vignettes = TRUE,
-                         upgrade_dependencies = FALSE)
+devtools::install_github("stephenslab/mixsqp",build_vignettes = TRUE)
 library(mixsqp)
 vignette("mixsqp-intro")
 ```
@@ -137,8 +141,8 @@ in the shell:
 
 ```bash
 R CMD build mixsqp
-R CMD INSTALL mixsqp_0.1-79.tar.gz
-R CMD check --as-cran mixsqp_0.1-79.tar.gz
+R CMD INSTALL mixsqp_0.1-97.tar.gz
+R CMD check --as-cran mixsqp_0.1-97.tar.gz
 ```
 
 Note that these commands require that the dependencies have already

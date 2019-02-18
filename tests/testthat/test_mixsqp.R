@@ -1,5 +1,15 @@
 context("mixsqp")
 
+# The Rmosek package on CRAN will not work with REBayes. This function
+# is used for some of the tests to check whether the correct Rmosek
+# package (the one downloaded from mosek.com) is installed.
+skip_if_mixkwdual_doesnt_work <- function() {
+  testthat::skip_if_not_installed("REBayes")
+  testthat::skip_if_not_installed("Rmosek")
+  testthat::skip_if(is.element("mosek_attachbuilder",
+                               getNamespaceExports("Rmosek")))
+}
+
 test_that("Version number in mixsqp with verbose = TRUE is correct",{
   data(tacks)
   out <- capture.output(mixsqp(tacks$L,tacks$w))
@@ -16,12 +26,14 @@ test_that(paste("mix-SQP allows zero likelihoods, but reports an error",
   expect_error(mixsqp(L,x0 = c(0,0,1)))
 })
 
-test_that("mix-SQP gives a warning when eps is large w.r.t. to L",{
+test_that("eps parameter automatically adjusts according to scale of L",{
   set.seed(1)
   n   <- 1000
   m   <- 10
   L   <- simulatemixdata(n,m)$L
-  expect_warning(capture.output(mixsqp(L/1e6)))
+  capture.output(out1 <- mixsqp(L))
+  capture.output(out2 <- mixsqp(L/1e10))
+  expect_equal(out1$x,out2$x,tolerance = 1e-8)
 })
 
 test_that(paste("mix-SQP converges to correct solution even when initial",
@@ -84,7 +96,7 @@ test_that(paste("mix-SQP and KWDual return the same solution for",
   expect_equal(names(out1$x),colnames(L))
 
   # Apply KWDual solver to the data set. 
-  skip_if_not_installed("REBayes")
+  skip_if_mixkwdual_doesnt_work()
   out2 <- mixkwdual(L)
   expect_equal(names(out2$x),colnames(L))
 
@@ -98,7 +110,7 @@ test_that(paste("mix-SQP & KWDual return the same solution for",
                 "1000 x 10 likelihood matrix with unequal row weights"),{
 
   # The REBayes package is required to run this test.
-  skip_if_not_installed("REBayes")
+  skip_if_mixkwdual_doesnt_work()
   
   # Simulate a 1000 x 10 likelihood matrix, and different weights for
   # the rows of this matrix.
@@ -112,7 +124,7 @@ test_that(paste("mix-SQP & KWDual return the same solution for",
   expect_equal(out1$status,mixsqp:::mixsqp.status.converged)
 
   # Apply KWDual solver to the data set.
-  skip_if_not_installed("REBayes")
+  skip_if_mixkwdual_doesnt_work()
   out2 <- mixkwdual(L,w)
   
   # The outputted solutions, and the objective values at those
@@ -169,7 +181,7 @@ test_that("mix-SQP does not report an error with convergence failure",{
   capture_output(out <- mixsqp(L,x0 = c(0,1,1),
                                control = list(maxiter.sqp = 3)))
   expect_equal(out$status,mixsqp.status.didnotconverge)
-  expect_equal(dim(out$progress),c(3,6))
+  expect_equal(dim(out$progress),c(3,7))
 })
 
 # This test comes from Issue #3.
@@ -188,7 +200,7 @@ test_that(paste("mix-SQP gives correct solution for \"short and fat\" matrix,",
   # be very similar, even when the Newton search direction in the
   # active-set method is not necessarily unique (i.e., the Hessian is
   # not s.p.d.).
-  skip_if_not_installed("REBayes")
+  skip_if_mixkwdual_doesnt_work()
   out3 <- mixkwdual(L)
   expect_equal(out1$x,out3$x,tolerance = 1e-8)
   expect_equal(out2$x,out3$x,tolerance = 1e-8)
@@ -221,10 +233,87 @@ test_that(paste("mix-SQP converges, and outputs correct solution, for example",
   
   # When the mix-SQP iterates converge, they should be very close to
   # the KWDual solution.
-  skip_if_not_installed("REBayes")
+  skip_if_mixkwdual_doesnt_work()
   out4 <- mixkwdual(L)
   expect_equal(out2$x,out4$x,tolerance = 1e-7)
   expect_equal(out3$x,out4$x,tolerance = 1e-7)
   expect_equal(out2$value,out4$value,tolerance = 1e-8)
   expect_equal(out3$value,out4$value,tolerance = 1e-8)
+})
+
+test_that(paste("Case is properly handled in which all columns except",
+                "one are filled with zeros"),{
+  set.seed(1)
+  n       <- 200
+  m       <- 10
+  i       <- 7
+  L       <- simulatemixdata(n,m)$L
+  L[,-i]  <- 0
+  xsol    <- rep(0,m)
+  xsol[i] <- 1
+  expect_warning(capture.output(out1 <- mixsqp(L)))
+  expect_equal(out1$status,mixsqp:::mixsqp.status.didnotrun)
+  expect_null(out1$progress)
+  expect_equal(out1$x,xsol)
+
+  skip_if_mixkwdual_doesnt_work()
+  expect_warning(capture.output(out2 <- mixkwdual(L)))
+  expect_equal(out2$x,xsol)
+})
+
+test_that("Case is properly handled in which one column of L is all zeros",{
+  set.seed(1)
+  n <- 200
+  m <- 10
+  i <- 7
+  L <- simulatemixdata(n,m)$L
+
+  # Run the mix-SQP algorithm when all columns have nonzeros.
+  L[,i] <- 1e-8
+  capture.output(out1 <- mixsqp(L))
+
+  # Set one of the columns to be all zeros, and re-run the mix-SQP
+  # algorithm.
+  L[,i] <- 0
+  expect_warning(capture.output(out2 <- mixsqp(L)))
+
+  # The two solutions should be pretty much the same.
+  expect_equal(out1$x,out2$x,tolerance = 1e-8)
+  expect_equal(out1$value,out2$value,tolerance = 1e-8)
+
+  # Also check KWDual solution.
+  skip_if_mixkwdual_doesnt_work()
+  expect_warning(out3 <- mixkwdual(L))
+  expect_equal(out1$x,out3$x,tolerance = 1e-6)
+  expect_equal(out1$value,out3$value,tolerance = 1e-6)
+})
+
+test_that("Case is properly handled when L has only one column",{
+  set.seed(1)
+  L    <- matrix(runif(100))
+  suppressWarnings(out1 <- mixsqp(L))
+  suppressWarnings(out2 <- mixkwdual(L))
+  expect_equal(out1$x,1)
+  expect_equal(out2$x,1)
+  expect_equal(out1$value,out2$value)
+})
+
+test_that(paste("mix-SQP converges to solution for \"flat\" objective even",
+                "if initial progress is poor"),{
+  set.seed(1)
+  n   <- 10000
+  m   <- 20
+  L   <- matrix(runif(n*m),n,m)
+  out <- mixsqp(L)
+  expect_equal(out$status,mixsqp:::mixsqp.status.converged)
+})
+
+# This test comes from Issue #19.
+test_that("mix-SQP converges (sometimes) in a more difficult example",{
+  load("flashr.example.RData")
+  capture.output(out1 <- mixsqp(L))
+  expect_equal(out1$status,mixsqp:::mixsqp.status.converged)
+  skip_if_mixkwdual_doesnt_work()
+  out2 <- mixkwdual(L)
+  expect_equal(out1$x,out2$x,tolerance = 1e-8)
 })

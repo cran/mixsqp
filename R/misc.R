@@ -5,7 +5,6 @@ verify.logical.arg <- function (x, arg.name = deparse(substitute(x))) {
         is.logical(x) &
         length(x) == 1 &
         all(!is.na(x)) &
-        all(is.finite(x)) &
         all(x == TRUE | x == FALSE)))
     stop(paste("Argument",arg.name,"should be TRUE or FALSE"))
   return(TRUE)
@@ -50,17 +49,18 @@ verify.maxiter.arg <- function (x, arg.name = deparse(substitute(x))) {
 # returned.
 verify.likelihood.matrix <- function (L) {
   msg <- paste("Input argument \"L\" should be a numeric matrix with >= 2",
-               "columns, all its entries should be non-negative, finite",
-               "and not NA, and no column should be entirely zeros")
+               "columns, >= 1 rows, all its entries should be non-negative,",
+               "finite and not NA, and some entries should be positive")
   if (!is.matrix(L))
     stop(msg)
-  else if (!(ncol(L) >= 2 &
+  else if (!(nrow(L) >= 1 &
+             ncol(L) >= 1 &
              is.numeric(L)))
     stop(msg)
   else if (!(all(L >= 0) &
              all(is.finite(L)) &
              !any(is.na(L)) &
-             all(apply(L,2,max) > 0)))
+             any(L > 0)))
     stop(msg)
   return(TRUE)
 }
@@ -124,3 +124,11 @@ verify.estimate <- function (x, L, arg.name = deparse(substitute(x))) {
 # logarithmic scale. Note that x and y should be positive numbers.
 logspace <- function (x, y, n)
   2^seq(log2(x),log2(y),length = n)
+
+# Scale each column A[,i] by b[i].
+scale.cols <- function (A, b) {
+    
+  # TO DO: Modify this code to avoid the transpose of A, which could
+  # be a large matrix.
+  t(t(A) * b)
+}

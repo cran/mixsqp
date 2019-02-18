@@ -16,9 +16,8 @@ In the context of mixture-model fitting, \code{L[j,k]} should be
 the value of the kth mixture component density at the jth data
 point. \code{L} should be a numeric matrix with at least two
 columns, with all entries being non-negative and finite (and not
-missing). Further, no column should be entirely zeros. For large
-matrices, it is preferrable that the matrix is stored in
-double-precision; see \code{\link{storage.mode}}.}
+missing). For large matrices, it is preferrable that the matrix is
+stored in double-precision; see \code{\link{storage.mode}}.}
 
 \item{w}{An optional numeric vector, with one entry for each row of
 \code{L}, specifying the "weights" associated with the rows of
@@ -46,8 +45,8 @@ A list object with the following elements:
 \item{value}{The value of the objective function, \eqn{f(x)}, at
 \code{x}.}
 
-\item{status}{A character string giving the status of the algorithm
-upon termination.}
+\item{status}{A character string describing the status of the
+algorithm upon termination.}
 
 \item{progress}{A data frame containing more detailed information
 about the algorithm's progress. The data frame has one row per SQP
@@ -104,9 +103,9 @@ that the optimization algorithm will behave similarly irrespective
 of the scale of \code{L}; for example, the same value for the
 convergence tolerance \code{convtol.sqp} will have the same effect
 at different scales. The one exception is the \code{eps} control
-parameter, which should be adjusted appropriately to reflect the
-scale of \code{L}, or set to zero; see the description of this
-parameter below for more details.
+parameter, and for this reason the effect of \code{eps} is
+automatically adjusted to reflect the scale of \code{L}; see the
+description of this parameter below for more details.
 
 A related feature is that the solution to the optimization problem
 is invariant to rescaling the rows of \code{L}; for example, the
@@ -166,18 +165,31 @@ this tolerance parameter can affect how reliably the SQP
 convergence criterion is satisfied, as determined by
 \code{convtol.sqp}, so choose this parameter carefully.}
 
-\item{\code{eps}}{A small, non-negative number added to the
+\item{\code{suffdecr.linesearch}}{This parameter determines how
+stringent t he "sufficient decrease" condition is for accepting a
+step size in the backtracking line search. Larger values will make
+the condition more stringent. This should be a positive number less
+than 1.}
+
+\item{\code{stepsizereduce}}{The multiplicative factor for
+decreasing the step size in the backtracking line search. Smaller
+values will yield a faster backtracking line search at the expense
+of a less fine-grained search. Should be a positive number less than
+1.}
+
+\item{\code{minstepsize}}{The smallest step size accepted by the
+line search step. Should be a number greater than 0 and at most 1.}
+
+\item{\code{eps}}{A small, non-negative number that is added to the
 terms inside the logarithms to sidestep computing logarithms of
 zero. This prevents numerical problems at the cost of introducing a
 small inaccuracy in the solution. Increasing this number may lead
-to faster convergence but possibly a less accurate solution. Note
-that an appropriate value of \code{eps} will depend on the "scale"
-of \code{L}; for example, if the largest entry in the matrix is
-\code{1e-10}, setting \code{eps = 1e-8} will dominate the
-logarithm terms in the objective, leading to inaccurate solutions.
-In such situations, \code{eps} should be increased or decreased
-appropriately (or set to zero), or the rows of \code{L} can
-normalized beforehand (see above).}
+to faster convergence but possibly a less accurate solution. Since
+an appropriate value of this number will depend on the "scale" of
+\code{L}, \code{eps} is automatically scaled separately for each
+row of \code{L}; specifically, the ith modified logarithm term
+becomes \code{log(L[i,]*x + ei)}, in which \code{ei} is set to
+\code{eps * max(L[i,])}.}
 
 \item{\code{delta}}{A small, non-negative number added to the
 diagonal of the Hessian to improve numerical stability (and
@@ -190,7 +202,9 @@ number of quadratic subproblems that will be solved by the
 active-set method.}
 
 \item{\code{maxiter.activeset}}{Maximum number of active-set
-iterations taken to solve each of the quadratic subproblems.}
+iterations taken to solve each of the quadratic subproblems. If
+\code{NULL}, the maximum number of active-set iterations is set to
+\code{1 + ncol(L)}.}
 
 \item{\code{verbose}}{If \code{verbose = TRUE}, the algorithm's
 progress and a summary of the optimization settings are printed to

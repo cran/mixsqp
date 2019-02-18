@@ -1,14 +1,16 @@
 ## ----setup, include=FALSE------------------------------------------------
 knitr::opts_chunk$set(collapse = TRUE,results = "hold",comment = "#",
-                      fig.align="center")
-if (!requireNamespace("REBayes",quietly = TRUE))
-  knitr::opts_chunk$set(eval = FALSE)
+                      fig.align="center",eval = FALSE)
+if (requireNamespace("REBayes",quietly = TRUE) &
+    requireNamespace("Rmosek",quietly = TRUE)) {
+  if (!is.element("mosek_attachbuilder",getNamespaceExports("Rmosek"))) {
+    knitr::opts_chunk$set(eval = TRUE)
+	cat("!!!\n")
+  }
+}
 
 ## ----load-pkgs, eval=TRUE, message=FALSE---------------------------------
 library(mixsqp)
-
-## ----load-rmosek, message=FALSE------------------------------------------
-library(Rmosek)
 
 ## ----set-seed, eval=TRUE-------------------------------------------------
 set.seed(1)
@@ -53,7 +55,4 @@ cat(sprintf("Difference in objectives:  %0.4e\n",fit.sqp$value - fit.ip$value))
 
 ## ----session-info, eval=TRUE---------------------------------------------
 sessionInfo()
-
-## ----mosek-info----------------------------------------------------------
-mosek_version()
 

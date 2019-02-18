@@ -1,8 +1,8 @@
 Encoding: UTF-8
 Type: Package
 Package: mixsqp
-Version: 0.1-79
-Date: 2018-11-05
+Version: 0.1-97
+Date: 2019-02-08
 Title: Sequential Quadratic Programming for Fast Maximum-Likelihood
         Estimation of Mixture Proportions
 Authors@R: c(person("Youngseok","Kim",role="aut",
@@ -10,7 +10,9 @@ Authors@R: c(person("Youngseok","Kim",role="aut",
              person("Peter","Carbonetto",role=c("aut","cre"),
                     email="peter.carbonetto@gmail.com"),
              person("Mihai","Anitescu",role="aut"),
-             person("Matthew","Stephens",role="aut"))
+             person("Matthew","Stephens",role="aut"),
+             person("Jason","Willwerscheid",role="ctb"),
+             person("Jean","Morrison",role="ctb"))
 URL: https://github.com/stephenslab/mixsqp
 BugReports: https://github.com/stephenslab/mixsqp/issues
 SystemRequirements: C++11
@@ -26,17 +28,19 @@ Description: Provides optimization algorithms based on sequential
   P. Carbonetto, M. Stephens & M. Anitescu (2012) <arXiv:1806.01412>.
 License: MIT + file LICENSE
 Imports: stats, Rcpp (>= 0.12.15)
-Suggests: Rmosek, REBayes, testthat, knitr, rmarkdown
+Suggests: REBayes, Rmosek, testthat, knitr, rmarkdown
 LinkingTo: Rcpp, RcppArmadillo
 LazyData: true
 NeedsCompilation: yes
 VignetteBuilder: knitr
-RoxygenNote: 6.1.0.9000
-Packaged: 2018-11-05 22:41:03 UTC; pcarbo
+RoxygenNote: 6.1.1
+Packaged: 2019-02-08 13:57:28 UTC; pcarbo
 Author: Youngseok Kim [aut],
   Peter Carbonetto [aut, cre],
   Mihai Anitescu [aut],
-  Matthew Stephens [aut]
+  Matthew Stephens [aut],
+  Jason Willwerscheid [ctb],
+  Jean Morrison [ctb]
 Maintainer: Peter Carbonetto <peter.carbonetto@gmail.com>
 Repository: CRAN
-Date/Publication: 2018-11-14 15:10:03 UTC
+Date/Publication: 2019-02-18 09:40:03 UTC

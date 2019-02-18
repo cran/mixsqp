@@ -15,19 +15,23 @@ using namespace Rcpp;
 // FUNCTION DECLARATIONS
 // ---------------------
 double mixobjective (const arma::mat& L, const arma::vec& w,
-		     const arma::vec& x, double e, arma::vec& u);
+		     const arma::vec& x, const arma::vec& e, 
+		     arma::vec& u);
 void   computegrad  (const arma::mat& L, const arma::vec& w,
-		     const arma::vec& x, double e, arma::vec& g,
-		     arma::mat& H, arma::vec& u, arma::mat& Z,
-		     const arma::mat& I);
+		     const arma::vec& x, const arma::vec& e, 
+		     arma::vec& g, arma::mat& H, arma::vec& u, 
+		     arma::mat& Z, const arma::mat& I);
 double activesetqp (const arma::mat& H, const arma::vec& g, arma::vec& y,
 		    arma::uvec& t, int maxiteractiveset,
 		    double zerothresholdsearchdir, 
 		    double convtolactiveset);
-double backtrackinglinesearch (double f, const arma::mat& L,
-			       const arma::vec& w, const arma::vec& g,
-			       const arma::vec& x, arma::vec& y,
-			       double eps);
+void backtrackinglinesearch (double f, const arma::mat& L,
+			     const arma::vec& w, const arma::vec& g,
+			     const arma::vec& x, const arma::vec& p,
+			     const arma::vec& eps, double suffdecr,
+			     double stepsizereduce, double minstepsize, 
+			     double& nls, double& stepsize, arma::vec& y,
+			     arma::vec& u);
 
 // FUNCTION DEFINITIONS
 // --------------------
@@ -40,7 +44,8 @@ double backtrackinglinesearch (double f, const arma::mat& L,
 List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0, 
                   double convtolsqp, double convtolactiveset,
 		  double zerothresholdsolution, double zerothresholdsearchdir,
-		  double eps, double delta, int maxitersqp, 
+		  double suffdecr, double stepsizereduce, double minstepsize,
+		  const arma::vec& eps, double delta, int maxitersqp,
 		  int maxiteractiveset, bool verbose) {
   
   // Get the number of rows (n) and columns (m) of the conditional
@@ -50,11 +55,14 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
 
   // Print a brief summary of the analysis, if requested.
   if (verbose) {
-    Rprintf("Running mix-SQP algorithm 0.1-79 on %d x %d matrix\n",n,m);
+    Rprintf("Running mix-SQP algorithm 0.1-97 on %d x %d matrix\n",n,m);
     Rprintf("convergence tol. (SQP):     %0.1e\n",convtolsqp);
     Rprintf("conv. tol. (active-set):    %0.1e\n",convtolactiveset);
     Rprintf("zero threshold (solution):  %0.1e\n",zerothresholdsolution);
     Rprintf("zero thresh. (search dir.): %0.1e\n",zerothresholdsearchdir);
+    Rprintf("l.s. sufficient decrease:   %0.1e\n",suffdecr);
+    Rprintf("step size reduction factor: %0.1e\n",stepsizereduce);
+    Rprintf("minimum step size:          %0.1e\n",minstepsize);
     Rprintf("max. iter (SQP):            %d\n",maxitersqp);
     Rprintf("max. iter (active-set):     %d\n",maxiteractiveset);
   }
@@ -67,12 +75,14 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
   arma::vec nnz(maxitersqp);
   arma::vec nqp(maxitersqp);
   arma::vec nls(maxitersqp);
+  arma::vec stepsize(maxitersqp);
   arma::vec dmax(maxitersqp);
   obj.zeros();
   gmin.zeros();
   nnz.zeros();
   nqp.fill(-1);
   nls.fill(-1);
+  stepsize.fill(-1);
   dmax.fill(-1);
 
   // Initialize the solution.
@@ -81,6 +91,7 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
   // Initialize storage for matrices and vectors used in the
   // computations below.
   arma::vec  g(m);    // Vector of length m storing the gradient.
+  arma::vec  p(m);    // Vector of length m storing the search direction.
   arma::vec  u(n);    // Vector of length n storing L*x + eps or its log.
   arma::mat  H(m,m);  // m x m matrix storing Hessian.
   arma::mat  Z(n,m);  // n x m matrix Z = D*L, where D = diag(1/(L*x+e)).
@@ -91,7 +102,7 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
 		      // differences between between two solution
 		      // estimates.
   
-  double status = 1;   // Convergence status.
+  double status = 1;  // Convergence status.
   
   // This is used in computing the Hessian matrix.
   I  = arma::eye(m,m);
@@ -101,8 +112,10 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
   int i = 0; 
   
   // Print the column labels for reporting the algorithm's progress.
-  if (verbose)
-    Rprintf("iter    objective max(rdual) nnz max.diff nqp nls\n");
+  if (verbose) {
+    Rprintf("iter        objective max(rdual) nnz stepsize max.diff nqp nls");
+    Rprintf("\n");
+  }
   
   // Repeat until the convergence criterion is met, or until we reach
   // the maximum number of (outer loop) iterations.
@@ -128,12 +141,12 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
     nnz[i]  = sum(t);
     if (verbose) {
       if (i == 0)
-        Rprintf("%4d %+0.5e %+0.3e%4d       NA  NA  NA\n",i + 1,obj[i],
-		-gmin[i],int(nnz[i]));
+        Rprintf("%4d %+0.9e %+0.3e%4d       NA       NA  NA  NA\n",
+		i + 1,obj[i],-gmin[i],int(nnz[i]));
       else
-        Rprintf("%4d %+0.5e %+0.3e%4d %0.2e %3d %3d\n",i + 1,obj[i],
-		-gmin[i],int(nnz[i]),dmax[i-1],int(nqp[i-1]),
-		int(nls[i-1]));
+        Rprintf("%4d %+0.9e %+0.3e%4d %0.2e %0.2e %3d %3d\n",i + 1,obj[i],
+		-gmin[i],(int) nnz[i],stepsize[i-1],dmax[i-1],
+		(int) nqp[i-1],(int) nls[i-1]);
     }
     
     // CHECK CONVERGENCE
@@ -159,12 +172,15 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
     
     // SOLVE QUADRATIC SUBPROBLEM
     // --------------------------
+    // Run the active-set solver to obtain a search direction.
     nqp[i] = activesetqp(H,g,y,t,maxiteractiveset,zerothresholdsearchdir,
 			 convtolactiveset);
+    p = y - x;
     
     // BACKTRACKING LINE SEARCH
     // ------------------------
-    nls[i] = backtrackinglinesearch(obj[i],L,w,g,x,y,eps);
+    backtrackinglinesearch(obj[i],L,w,g,x,p,eps,suffdecr,stepsizereduce,
+			   minstepsize,nls[i],stepsize[i],y,u);
     
     // UPDATE THE SOLUTION
     // -------------------
@@ -180,6 +196,7 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
 		      Named("objective") = obj.head(i),
 		      Named("max.rdual") = -gmin.head(i),
 		      Named("nnz")       = nnz.head(i),
+		      Named("stepsize")  = stepsize.head(i),
 		      Named("max.diff")  = dmax.head(i),
 		      Named("nqp")       = nqp.head(i),
 		      Named("nls")       = nls.head(i));
@@ -191,7 +208,7 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
 // vector of length n used to store an intermediate result used in the
 // calculation of the objective.
 double mixobjective (const arma::mat& L, const arma::vec& w,
-		     const arma::vec& x, double e, arma::vec& u) {
+		     const arma::vec& x, const arma::vec& e, arma::vec& u) {
   u = L*x + e;
   if (u.min() <= 0)
     Rcpp::stop("Halting because the objective function has a non-finite value (logarithms of numbers less than or equal to zero) at the current estimate of the solution");
@@ -206,7 +223,7 @@ double mixobjective (const arma::mat& L, const arma::vec& w,
 // in these calculations are stored in three variables: u, a vector of
 // length n; Z, an n x m matrix; and ZW, another n x m matrix.
 void computegrad (const arma::mat& L, const arma::vec& w, const arma::vec& x,
-		  double e, arma::vec& g, arma::mat& H, arma::vec& u,
+		  const arma::vec& e, arma::vec& g, arma::mat& H, arma::vec& u,
 		  arma::mat& Z, const arma::mat& I) {
    
   // Compute the gradient g = -L'*u where u = w./(L*x + e), and "./"
@@ -315,22 +332,36 @@ double activesetqp (const arma::mat& H, const arma::vec& g, arma::vec& y,
 // identify a step size satisfying the "sufficient decrease"
 // condition.
 // 
-// Note that sum(x) = sum(y) = 1, so replacing g by g+1 in dot product
-// of x-y & g has no effect.
-double backtrackinglinesearch (double f, const arma::mat& L,
-			       const arma::vec& w, const arma::vec& g,
-			       const arma::vec& x, arma::vec& y,
-			       double eps) {
-  int n = L.n_rows;
-  int j;
-  for (j = 0; j < 24; j++) {
-    if (f + sum(log(L*y + eps) % w) > dot(x - y,g)/(2*n)) {
-      j++;
+// Note that sum(x) = sum(y) = 1, so replacing g by g + 1 in dot product
+// of p and g has no effect.
+void backtrackinglinesearch (double f, const arma::mat& L,
+			     const arma::vec& w, const arma::vec& g,
+			     const arma::vec& x, const arma::vec& p,
+			     const arma::vec& eps, double suffdecr,
+			     double stepsizereduce, double minstepsize, 
+			     double& nls, double& stepsize, arma::vec& y,
+			     arma::vec& u) {
+  double fnew;
+  stepsize = 1;
+  nls      = 0;
+
+  // Iteratively reduce the step size until either (1) we can't reduce
+  // any more (because we have hit the minimum step size constraint),
+  // or (2) the new candidate solution satisfies the "sufficient
+  // decrease" condition.
+  while (stepsizereduce * stepsize >= minstepsize) {
+    y    = x + stepsize*p;
+    fnew = mixobjective(L,w,y,eps,u);
+    nls++;
+
+    // Check whether the new candidate solution (y) satisfies the
+    // sufficient decrease condition. If so, accept this candidate
+    // solution.
+    if (fnew <= f + suffdecr*stepsize*dot(p,g))
       break;
-    }
-    y = (y - x)/2 + x;
+
+    // The new candidate does not satisfy the sufficient decrease
+    // condition, so we need to try again with a smaller step size.
+    stepsize *= stepsizereduce;
   }
-  if (j >= 24)
-    Rcpp::stop("Step size is too small; consider increasing \"eps\", or relaxing convergence criteria");
-  return j;
 }
