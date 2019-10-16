@@ -36,12 +36,11 @@ repository useful for your work, please cite:
 
 ## License
 
-Copyright (c) 2017-2018, Youngseok Kim, Peter Carbonetto, Matthew
+Copyright (c) 2017-2019, Youngseok Kim, Peter Carbonetto, Matthew
 Stephens and Mihai Anitescu.
 
 All source code and software in this repository are made available
-under the terms of the [MIT license][mit-license]. See
-file [LICENSE](LICENSE) for the full text of the license.
+under the terms of the [MIT license][mit-license].
 
 ## Quick Start
 
@@ -141,8 +140,8 @@ in the shell:
 
 ```bash
 R CMD build mixsqp
-R CMD INSTALL mixsqp_0.1-97.tar.gz
-R CMD check --as-cran mixsqp_0.1-97.tar.gz
+R CMD INSTALL mixsqp_0.2-2.tar.gz
+R CMD check --as-cran mixsqp_0.2-2.tar.gz
 ```
 
 Note that these commands require that the dependencies have already
@@ -151,9 +150,9 @@ been installed. See the [DESCRIPTION](DESCRIPTION) file for details.
 ### Updating the C++ source and documentation
 
 When any changes are made to [roxygen2][roxygen2] markup or to the C++
-code in the src directory, simply run `devtools::document()` to 
+code in the `src` directory, simply run `devtools::document()` to 
 update the [RcppExports.cpp](src/RcppExports.cpp), the NAMESPACE file,
-and the package documentation files in the man directory.
+and the package documentation files in the `man` directory.
 
 ### Updating the pkgdown site
 
@@ -161,8 +160,11 @@ Run this line of R code to build the website (make sure you have an
 Internet connection while running the code):
 
 ```R
-pkgdown::build_site(mathjax = FALSE)
+library(pkgdown)
+build_site(mathjax = FALSE)
 ```
+
+Version 1.1.0 of pkgdown was used.
 
 ### Other developer notes
 

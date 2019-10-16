@@ -18,14 +18,14 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' containing only non-negative entries, and let \eqn{w = (w_1,
 #' \ldots, w_n)} be a vector of non-negative "weights". \code{mixsqp}
 #' computes the value of vector \eqn{x = (x_1, \ldots, x_m)}
-#' minimizing the following objective function,
-#' \deqn{f(x) = -\sum_{j=1}^n w_j \log (\sum_{k=1}^m L_{jk} x_k),}
-#' subject to the constraint that \eqn{x} lie within the simplex;
-#' that is, the entries of \eqn{x} are non-negative and sum to 1.
-#' Implicitly, there is an additional constraint \eqn{L*x > 0} in
-#' order to ensure that the objective has a finite value. In practice,
-#' this constraint only needs to be checked for the initial estimate
-#' to ensure that it holds for all subsequent iterates.
+#' minimizing the following objective function, \deqn{f(x) =
+#' -\sum_{j=1}^n w_j \log (\sum_{k=1}^m L_{jk} x_k),} subject to the
+#' constraint that \eqn{x} lie within the simplex; that is, the
+#' entries of \eqn{x} are non-negative and sum to 1.  Implicitly,
+#' there is an additional constraint \eqn{L*x > 0} in order to ensure
+#' that the objective has a finite value. In practice, this constraint
+#' only needs to be checked for the initial estimate to ensure that it
+#' holds for all subsequent iterates.
 #' 
 #' If all weights are equal, solving this optimization problem
 #' corresponds to finding the maximum-likelihood estimate of the
@@ -45,10 +45,7 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' that the optimization algorithm will behave similarly irrespective
 #' of the scale of \code{L}; for example, the same value for the
 #' convergence tolerance \code{convtol.sqp} will have the same effect
-#' at different scales. The one exception is the \code{eps} control
-#' parameter, and for this reason the effect of \code{eps} is
-#' automatically adjusted to reflect the scale of \code{L}; see the
-#' description of this parameter below for more details.
+#' at different scales.
 #'
 #' A related feature is that the solution to the optimization problem
 #' is invariant to rescaling the rows of \code{L}; for example, the
@@ -69,7 +66,7 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' The \code{control} argument is a list in which any of the
 #' following named components will override the default optimization
 #' algorithm settings (as they are defined by
-#' \code{mixsqp_control_defaults}):
+#' \code{mixsqp_control_default}):
 #' 
 #' \describe{
 #' 
@@ -109,7 +106,7 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' \code{convtol.sqp}, so choose this parameter carefully.}
 #'
 #' \item{\code{suffdecr.linesearch}}{This parameter determines how
-#' stringent t he "sufficient decrease" condition is for accepting a
+#' stringent the "sufficient decrease" condition is for accepting a
 #' step size in the backtracking line search. Larger values will make
 #' the condition more stringent. This should be a positive number less
 #' than 1.}
@@ -122,23 +119,19 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #'
 #' \item{\code{minstepsize}}{The smallest step size accepted by the
 #' line search step. Should be a number greater than 0 and at most 1.}
+#'
+#' \item{\code{identity.contrib.increase}}{When the Hessian is not
+#' positive definite, a multiple of the identity is added to the
+#' Hessian to ensure a unique search direction. The factor for
+#' increasing the identity contribution in this modified Hessian is
+#' determined by this control parameter.}
 #' 
 #' \item{\code{eps}}{A small, non-negative number that is added to the
 #' terms inside the logarithms to sidestep computing logarithms of
 #' zero. This prevents numerical problems at the cost of introducing a
 #' small inaccuracy in the solution. Increasing this number may lead
-#' to faster convergence but possibly a less accurate solution. Since
-#' an appropriate value of this number will depend on the "scale" of
-#' \code{L}, \code{eps} is automatically scaled separately for each
-#' row of \code{L}; specifically, the ith modified logarithm term
-#' becomes \code{log(L[i,]*x + ei)}, in which \code{ei} is set to
-#' \code{eps * max(L[i,])}.}
+#' to faster convergence but possibly a less accurate solution.}
 #'
-#' \item{\code{delta}}{A small, non-negative number added to the
-#' diagonal of the Hessian to improve numerical stability (and
-#' possibly the speed) when computing the search directions in the
-#' active-set step.}
-#' 
 #' \item{\code{maxiter.sqp}}{Maximum number of SQP iterations to
 #' run before reporting a convergence failure; that is, the maximum
 #' number of quadratic subproblems that will be solved by the
@@ -147,7 +140,11 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' \item{\code{maxiter.activeset}}{Maximum number of active-set
 #' iterations taken to solve each of the quadratic subproblems. If
 #' \code{NULL}, the maximum number of active-set iterations is set to
-#' \code{1 + ncol(L)}.}
+#' \code{min(100,1 + ncol(L))}.}
+#'
+#' \item{\code{numiter.em}}{Number of expectation maximization (EM)
+#' updates to perform prior to running mix-SQP. This can help ensure
+#' convergence of mix-SQP when the initial solution is very poor.}
 #' 
 #' \item{\code{verbose}}{If \code{verbose = TRUE}, the algorithm's
 #' progress and a summary of the optimization settings are printed to
@@ -171,8 +168,13 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' the value of the kth mixture component density at the jth data
 #' point. \code{L} should be a numeric matrix with at least two
 #' columns, with all entries being non-negative and finite (and not
-#' missing). For large matrices, it is preferrable that the matrix is
-#' stored in double-precision; see \code{\link{storage.mode}}.
+#' missing). In some cases, it is easier or more natural to compute
+#' \code{log(L)}; for example, it is often easier to compute the
+#' log-likelihood rather than the likelihood. Setting \code{log = TRUE}
+#' will tell \code{mixsqp} to interpret this input as the logarithm of
+#' the data matrix. Note that, for large matrices, it is preferrable
+#' that the matrix is stored in double-precision; see
+#' \code{\link{storage.mode}}.
 #'
 #' @param w An optional numeric vector, with one entry for each row of
 #' \code{L}, specifying the "weights" associated with the rows of
@@ -189,12 +191,20 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' will be normalized to sum to 1. By default, \code{x0} is the vector
 #' with all equal values.
 #'
+#' @param log When \code{log = TRUE}, the input matrix \code{L} is
+#' interpreted as containing the logarithm of the data matrix. 
+#' 
 #' @param control A list of parameters controlling the behaviour of
 #' the optimization algorithm. See \sQuote{Details}.
 #' 
 #' @return A list object with the following elements:
 #'
-#' \item{x}{The solution to the convex optimization problem.}
+#' \item{x}{If the SQP algorithm converges, this is the solution to
+#' the convex optimization problem. If the algorithm fails to
+#' converge, it is the best estimate of the solution achieved by the
+#' algorithm. Note that if the SQP algorithm terminates before
+#' reaching the solution, \code{x} may not satisfy the equality
+#' constraint; that is, the entries of \code{x} may not sum to 1.}
 #'
 #' \item{value}{The value of the objective function, \eqn{f(x)}, at
 #' \code{x}.}
@@ -205,7 +215,7 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' \item{progress}{A data frame containing more detailed information
 #' about the algorithm's progress. The data frame has one row per SQP
 #' iteration. For an explanation of the columns, see the description
-#' of the \code{verbose} control paramter in \sQuote{Details}. Missing
+#' of the \code{verbose} control parameter in \sQuote{Details}. Missing
 #' values (\code{NA}'s) in the last row indicate that these quantities were
 #' not computed because convergence was reached before computing
 #' them. Also note that the storage of these quantities in the
@@ -215,12 +225,13 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' previous iteration.}
 #'
 #' @references
+#' 
 #' Y. Kim, P. Carbonetto, M. Stephens and M. Anitescu (2018). A fast
 #' algorithm for maximum likelihood estimation of mixture proportions
 #' using sequential quadratic programming. arXiv:1806.01412
 #' \url{https://arxiv.org/abs/1806.01412}.
 #'
-#' @seealso \code{mixobjective}, \code{mixkwdual}
+#' @seealso \code{\link{mixobjective}}, \code{\link{mixkwdual}}
 #' 
 #' @examples
 #' set.seed(1)
@@ -249,12 +260,17 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' @export
 #' 
 mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
-                    control = list()) {
+                    log = FALSE, control = list()) {
   
   # CHECK & PROCESS INPUTS
   # ----------------------
-  # Check the likelihood matrix and, if necessary, coerce the
-  # likelihood matrix to be in double-precision.
+  # Check and process the likelihood matrix and, if necessary, coerce
+  # the likelihood matrix to be in double-precision.
+  verify.logical.arg(log)
+  if (!is.matrix(L))
+    stop("Input argument \"L\" should be a numeric matrix")
+  if (log)
+    L <- normalize.loglikelihoods(L)
   verify.likelihood.matrix(L)
   if (storage.mode(L) != "double")
     storage.mode(L) <- "double"
@@ -282,23 +298,24 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
   if (any(!is.element(names(control),names(control0))))
     stop("Argument \"control\" contains unknown parameter names")
   control <- modifyList(control0,control,keep.null = TRUE)
-  convtol.sqp              <- control$convtol.sqp
-  convtol.activeset        <- control$convtol.activeset
-  zero.threshold.solution  <- control$zero.threshold.solution
-  zero.threshold.searchdir <- control$zero.threshold.searchdir
-  suffdecr.linesearch      <- control$suffdecr.linesearch
-  stepsizereduce           <- control$stepsizereduce
-  minstepsize              <- control$minstepsize
-  eps                      <- control$eps
-  delta                    <- control$delta
-  maxiter.sqp              <- control$maxiter.sqp
-  maxiter.activeset        <- control$maxiter.activeset
-  verbose                  <- control$verbose
+  convtol.sqp               <- control$convtol.sqp
+  convtol.activeset         <- control$convtol.activeset
+  zero.threshold.solution   <- control$zero.threshold.solution
+  zero.threshold.searchdir  <- control$zero.threshold.searchdir
+  suffdecr.linesearch       <- control$suffdecr.linesearch
+  stepsizereduce            <- control$stepsizereduce
+  minstepsize               <- control$minstepsize
+  identity.contrib.increase <- control$identity.contrib.increase
+  eps                       <- control$eps
+  maxiter.sqp               <- control$maxiter.sqp
+  maxiter.activeset         <- control$maxiter.activeset
+  numiter.em                <- control$numiter.em
+  verbose                   <- control$verbose
 
   # If the maximum number of active-set iterations is set to NULL, set
-  # it to be equal to the number of columns of L.
+  # it to be equal to 1 + ncol(L), or 100, whichever is smaller.
   if (is.null(maxiter.activeset))
-    maxiter.activeset <- m + 1
+    maxiter.activeset <- min(100,m + 1)
   
   # Input arguments "maxiter.sqp" and "maxiter.activeset" should be
   # scalars that are integers greater than zero.
@@ -308,24 +325,29 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
   maxiter.activeset  <- as.integer(maxiter.activeset)
 
   # Input arguments "convtol.sqp", "convtol.activeset",
-  # "zero.threshold.solution", "zero.threshold.searchdir", and "eps"
-  # should be non-negative scalars.  Additionally,
-  # "zero.threshold.solution" should be less than 1/m. Also, post a
-  # warning if eps is within range of the largest value in one of the
-  # rows of the matrix L.
+  # "zero.threshold.solution", "zero.threshold.searchdir",
+  # "numiter.em", "identity.contrib.increase", and "eps" should be
+  # non-negative scalars. Additionally, "zero.threshold.solution"
+  # should be less than 1/m. Also, post a warning if eps is within
+  # range of the largest value in one of the rows of the matrix L.
   verify.nonneg.scalar.arg(convtol.sqp)
   verify.nonneg.scalar.arg(convtol.activeset)
+  verify.nonneg.scalar.arg(numiter.em)
   verify.nonneg.scalar.arg(zero.threshold.solution)
   verify.nonneg.scalar.arg(zero.threshold.searchdir)
   verify.nonneg.scalar.arg(suffdecr.linesearch)
   verify.nonneg.scalar.arg(stepsizereduce)
   verify.nonneg.scalar.arg(minstepsize)
+  verify.nonneg.scalar.arg(identity.contrib.increase)
   verify.nonneg.scalar.arg(eps)
   if (!(0 < stepsizereduce & stepsizereduce < 1 &
-        0 < suffdecr.linesearch & 0 < minstepsize))
+        identity.contrib.increase > 0  &
+        suffdecr.linesearch > 0 &
+        minstepsize > 0))
     stop(paste("Control parameter \"stepsizereduce\" must be greater than",
-               "0 and less than 1, and \"suffdecr.linesearch\" and",
-               "\"minstepsize\" must be positive"))
+               "0 and less than 1, and \"suffdecr.linesearch\",",
+               "\"identity.contrib.increase\" and \"minstepsize\" must be",
+               "positive"))
   if (zero.threshold.solution >= 1/m)
     stop(paste("Behavior of algorithm will be unpredictable if",
                "zero.threshold > 1/m, where m = ncol(X)"))
@@ -358,15 +380,58 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
     x0 <- x0/sum(x0)
   }
 
-  # Scale "eps" by the maximum value of each row of L.
-  eps <- eps * apply(L,1,max)
+  # Print a brief summary of the analysis, if requested.
+  if (verbose) {
+    cat(sprintf("Running mix-SQP algorithm 0.2-2 on %d x %d matrix\n",n,m))
+    cat(sprintf("convergence tol. (SQP):     %0.1e\n",convtol.sqp))
+    cat(sprintf("conv. tol. (active-set):    %0.1e\n",convtol.activeset))
+    cat(sprintf("zero threshold (solution):  %0.1e\n",zero.threshold.solution))
+    cat(sprintf("zero thresh. (search dir.): %0.1e\n",
+                zero.threshold.searchdir))
+    cat(sprintf("l.s. sufficient decrease:   %0.1e\n",suffdecr.linesearch))
+    cat(sprintf("step size reduction factor: %0.1e\n",stepsizereduce))
+    cat(sprintf("minimum step size:          %0.1e\n",minstepsize))
+    cat(sprintf("max. iter (SQP):            %d\n",maxiter.sqp))
+    cat(sprintf("max. iter (active-set):     %d\n",maxiter.activeset))
+    cat(sprintf("number of EM iterations:    %d\n",numiter.em))
+
+    # Print the column labels for reporting the algorithm's progress.
+    cat("iter        objective max(rdual) nnz stepsize max.diff nqp nls\n")
+  }
   
+  # RUN A FEW ITERATIONS OF EM
+  # --------------------------
+  x   <- x0
+  eps <- rep(eps,n)
+  if (numiter.em > 0) {
+    progress.em <- data.frame(objective = rep(0,numiter.em),
+                              max.rdual = rep(as.numeric(NA),numiter.em),
+                              nnz       = rep(as.numeric(NA),numiter.em),
+                              stepsize  = rep(1,numiter.em),
+                              max.diff  = rep(0,numiter.em),
+                              nqp       = rep(as.numeric(NA),numiter.em),
+                              nls       = rep(as.numeric(NA),numiter.em))
+    for (i in 1:numiter.em) {
+      xprev <- x
+      x     <- mixem.update(L,w,x,eps)
+      progress.em[i,"objective"] <- mixobj(L,w,x,eps)
+      progress.em[i,"max.diff"]  <- max(abs(x - xprev))
+      progress.em[i,"nnz"]       <- sum(x >= zero.threshold.solution)
+      if (verbose)
+        cat(sprintf("%4d %+0.9e  -- EM -- %4d 1.00e+00 %0.2e  --  --\n",
+                    i,progress.em[i,"objective"],progress.em[i,"nnz"],
+                    progress.em[i,"max.diff"]))
+    }
+  } else
+    progress.em <- NULL
+
   # SOLVE OPTIMIZATION PROBLEM USING mix-SQP
   # ----------------------------------------
-  out <- mixsqp_rcpp(L,w,x0,convtol.sqp,convtol.activeset,
+  out <- mixsqp_rcpp(L,w,x,convtol.sqp,convtol.activeset,
                      zero.threshold.solution,zero.threshold.searchdir,
                      suffdecr.linesearch,stepsizereduce,minstepsize,
-                     eps,delta,maxiter.sqp,maxiter.activeset,verbose)
+                     identity.contrib.increase,eps,maxiter.sqp,
+                     maxiter.activeset,verbose)
   
   # Get the algorithm convergence status. The convention is that
   # status = 0 means that the algorithm has successfully converged to
@@ -417,13 +482,14 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
   return(list(x        = x,
               status   = status,
               value    = f,
-              progress = data.frame(objective = out$objective,
-                                    max.rdual = out$max.rdual,
-                                    nnz       = out$nnz,
-                                    stepsize  = out$stepsize,
-                                    max.diff  = out$max.diff,
-                                    nqp       = out$nqp,
-                                    nls       = out$nls)))
+              progress = rbind(progress.em,
+                               data.frame(objective = out$objective,
+                                          max.rdual = out$max.rdual,
+                                          nnz       = out$nnz,
+                                          stepsize  = out$stepsize,
+                                          max.diff  = out$max.diff,
+                                          nqp       = out$nqp,
+                                          nls       = out$nls))))
 }
 
 #' @rdname mixsqp
@@ -431,15 +497,32 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
 #' @export
 #' 
 mixsqp_control_default <- function()
-  list(convtol.sqp              = 1e-8,
-       convtol.activeset        = 1e-10,
-       zero.threshold.solution  = 1e-6,
-       zero.threshold.searchdir = 1e-8,
-       suffdecr.linesearch      = 0.01,
-       stepsizereduce           = 0.5,
-       minstepsize              = 1e-4,
-       eps                      = 1e-8,
-       delta                    = 1e-10,
-       maxiter.sqp              = 1000,
-       maxiter.activeset        = NULL,
-       verbose                  = TRUE)
+  list(convtol.sqp               = 1e-8,
+       convtol.activeset         = 1e-10,
+       zero.threshold.solution   = 1e-8,
+       zero.threshold.searchdir  = 1e-15,
+       suffdecr.linesearch       = 0.01,
+       stepsizereduce            = 0.75,
+       minstepsize               = 1e-8,
+       identity.contrib.increase = 10,
+       eps                       = 0,
+       maxiter.sqp               = 1000,
+       maxiter.activeset         = NULL,
+       numiter.em                = 4,
+       verbose                   = TRUE)
+
+# Perform a single expectation maximization (EM) update.
+mixem.update <- function (L, w, x, e) {
+
+  # E STEP
+  # ------
+  # Compute the n x m matrix of posterior mixture assignment
+  # probabilities (L is an n x m matrix).
+  P <- scale.cols(L,x) + e
+  P <- P / rowSums(P)
+
+  # M STEP
+  # ------
+  # Update the mixture weights.
+  return(drop(w %*% P))
+}

@@ -5,7 +5,7 @@
 \alias{mixsqp_control_default}
 \title{Maximum-likelihood estimation of mixture proportions using SQP}
 \usage{
-mixsqp(L, w = rep(1, nrow(L)), x0 = rep(1, ncol(L)),
+mixsqp(L, w = rep(1, nrow(L)), x0 = rep(1, ncol(L)), log = FALSE,
   control = list())
 
 mixsqp_control_default()
@@ -16,8 +16,13 @@ In the context of mixture-model fitting, \code{L[j,k]} should be
 the value of the kth mixture component density at the jth data
 point. \code{L} should be a numeric matrix with at least two
 columns, with all entries being non-negative and finite (and not
-missing). For large matrices, it is preferrable that the matrix is
-stored in double-precision; see \code{\link{storage.mode}}.}
+missing). In some cases, it is easier or more natural to compute
+\code{log(L)}; for example, it is often easier to compute the
+log-likelihood rather than the likelihood. Setting \code{log = TRUE}
+will tell \code{mixsqp} to interpret this input as the logarithm of
+the data matrix. Note that, for large matrices, it is preferrable
+that the matrix is stored in double-precision; see
+\code{\link{storage.mode}}.}
 
 \item{w}{An optional numeric vector, with one entry for each row of
 \code{L}, specifying the "weights" associated with the rows of
@@ -34,13 +39,21 @@ objective evaluates to a finite value at \code{x0}). The vector
 will be normalized to sum to 1. By default, \code{x0} is the vector
 with all equal values.}
 
+\item{log}{When \code{log = TRUE}, the input matrix \code{L} is
+interpreted as containing the logarithm of the data matrix.}
+
 \item{control}{A list of parameters controlling the behaviour of
 the optimization algorithm. See \sQuote{Details}.}
 }
 \value{
 A list object with the following elements:
 
-\item{x}{The solution to the convex optimization problem.}
+\item{x}{If the SQP algorithm converges, this is the solution to
+the convex optimization problem. If the algorithm fails to
+converge, it is the best estimate of the solution achieved by the
+algorithm. Note that if the SQP algorithm terminates before
+reaching the solution, \code{x} may not satisfy the equality
+constraint; that is, the entries of \code{x} may not sum to 1.}
 
 \item{value}{The value of the objective function, \eqn{f(x)}, at
 \code{x}.}
@@ -51,7 +64,7 @@ algorithm upon termination.}
 \item{progress}{A data frame containing more detailed information
 about the algorithm's progress. The data frame has one row per SQP
 iteration. For an explanation of the columns, see the description
-of the \code{verbose} control paramter in \sQuote{Details}. Missing
+of the \code{verbose} control parameter in \sQuote{Details}. Missing
 values (\code{NA}'s) in the last row indicate that these quantities were
 not computed because convergence was reached before computing
 them. Also note that the storage of these quantities in the
@@ -75,14 +88,14 @@ Let \eqn{L} be a matrix with \eqn{n} rows and \eqn{m} columns
 containing only non-negative entries, and let \eqn{w = (w_1,
 \ldots, w_n)} be a vector of non-negative "weights". \code{mixsqp}
 computes the value of vector \eqn{x = (x_1, \ldots, x_m)}
-minimizing the following objective function,
-\deqn{f(x) = -\sum_{j=1}^n w_j \log (\sum_{k=1}^m L_{jk} x_k),}
-subject to the constraint that \eqn{x} lie within the simplex;
-that is, the entries of \eqn{x} are non-negative and sum to 1.
-Implicitly, there is an additional constraint \eqn{L*x > 0} in
-order to ensure that the objective has a finite value. In practice,
-this constraint only needs to be checked for the initial estimate
-to ensure that it holds for all subsequent iterates.
+minimizing the following objective function, \deqn{f(x) =
+-\sum_{j=1}^n w_j \log (\sum_{k=1}^m L_{jk} x_k),} subject to the
+constraint that \eqn{x} lie within the simplex; that is, the
+entries of \eqn{x} are non-negative and sum to 1.  Implicitly,
+there is an additional constraint \eqn{L*x > 0} in order to ensure
+that the objective has a finite value. In practice, this constraint
+only needs to be checked for the initial estimate to ensure that it
+holds for all subsequent iterates.
 
 If all weights are equal, solving this optimization problem
 corresponds to finding the maximum-likelihood estimate of the
@@ -102,10 +115,7 @@ gradient does not change. A practical benefit of this property is
 that the optimization algorithm will behave similarly irrespective
 of the scale of \code{L}; for example, the same value for the
 convergence tolerance \code{convtol.sqp} will have the same effect
-at different scales. The one exception is the \code{eps} control
-parameter, and for this reason the effect of \code{eps} is
-automatically adjusted to reflect the scale of \code{L}; see the
-description of this parameter below for more details.
+at different scales.
 
 A related feature is that the solution to the optimization problem
 is invariant to rescaling the rows of \code{L}; for example, the
@@ -126,7 +136,7 @@ multithreaded BLAS/LAPACK library (e.g., OpenBLAS).
 The \code{control} argument is a list in which any of the
 following named components will override the default optimization
 algorithm settings (as they are defined by
-\code{mixsqp_control_defaults}):
+\code{mixsqp_control_default}):
 
 \describe{
 
@@ -166,7 +176,7 @@ convergence criterion is satisfied, as determined by
 \code{convtol.sqp}, so choose this parameter carefully.}
 
 \item{\code{suffdecr.linesearch}}{This parameter determines how
-stringent t he "sufficient decrease" condition is for accepting a
+stringent the "sufficient decrease" condition is for accepting a
 step size in the backtracking line search. Larger values will make
 the condition more stringent. This should be a positive number less
 than 1.}
@@ -180,21 +190,17 @@ of a less fine-grained search. Should be a positive number less than
 \item{\code{minstepsize}}{The smallest step size accepted by the
 line search step. Should be a number greater than 0 and at most 1.}
 
+\item{\code{identity.contrib.increase}}{When the Hessian is not
+positive definite, a multiple of the identity is added to the
+Hessian to ensure a unique search direction. The factor for
+increasing the identity contribution in this modified Hessian is
+determined by this control parameter.}
+
 \item{\code{eps}}{A small, non-negative number that is added to the
 terms inside the logarithms to sidestep computing logarithms of
 zero. This prevents numerical problems at the cost of introducing a
 small inaccuracy in the solution. Increasing this number may lead
-to faster convergence but possibly a less accurate solution. Since
-an appropriate value of this number will depend on the "scale" of
-\code{L}, \code{eps} is automatically scaled separately for each
-row of \code{L}; specifically, the ith modified logarithm term
-becomes \code{log(L[i,]*x + ei)}, in which \code{ei} is set to
-\code{eps * max(L[i,])}.}
-
-\item{\code{delta}}{A small, non-negative number added to the
-diagonal of the Hessian to improve numerical stability (and
-possibly the speed) when computing the search directions in the
-active-set step.}
+to faster convergence but possibly a less accurate solution.}
 
 \item{\code{maxiter.sqp}}{Maximum number of SQP iterations to
 run before reporting a convergence failure; that is, the maximum
@@ -204,7 +210,11 @@ active-set method.}
 \item{\code{maxiter.activeset}}{Maximum number of active-set
 iterations taken to solve each of the quadratic subproblems. If
 \code{NULL}, the maximum number of active-set iterations is set to
-\code{1 + ncol(L)}.}
+\code{min(100,1 + ncol(L))}.}
+
+\item{\code{numiter.em}}{Number of expectation maximization (EM)
+updates to perform prior to running mix-SQP. This can help ensure
+convergence of mix-SQP when the initial solution is very poor.}
 
 \item{\code{verbose}}{If \code{verbose = TRUE}, the algorithm's
 progress and a summary of the optimization settings are printed to
@@ -250,5 +260,5 @@ using sequential quadratic programming. arXiv:1806.01412
 \url{https://arxiv.org/abs/1806.01412}.
 }
 \seealso{
-\code{mixobjective}, \code{mixkwdual}
+\code{\link{mixobjective}}, \code{\link{mixkwdual}}
 }

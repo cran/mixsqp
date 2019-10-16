@@ -42,11 +42,9 @@ verify.maxiter.arg <- function (x, arg.name = deparse(substitute(x))) {
 
 # Verify that the likelihood matrix specifying the optimization
 # problem is valid. The likelihood matrix should be a numeric matrix
-# with at least two columns, and all the entries should be positive.
-# It is assumed that the input argument is named "L".
-#
-# If the matrix is not valid, an error is reported; otherwise, TRUE is
-# returned.
+# with at least two columns. It is assumed that the input argument is
+# named "L". If the matrix is not valid, an error is reported;
+# otherwise, TRUE is returned.
 verify.likelihood.matrix <- function (L) {
   msg <- paste("Input argument \"L\" should be a numeric matrix with >= 2",
                "columns, >= 1 rows, all its entries should be non-negative,",
@@ -126,9 +124,15 @@ logspace <- function (x, y, n)
   2^seq(log2(x),log2(y),length = n)
 
 # Scale each column A[,i] by b[i].
-scale.cols <- function (A, b) {
-    
-  # TO DO: Modify this code to avoid the transpose of A, which could
-  # be a large matrix.
+scale.cols <- function (A, b)
   t(t(A) * b)
-}
+
+# Normalize the rows of A so that the largest entry in each row is 1.
+normalize.likelihoods <- function (A)
+  A / apply(A,1,max)
+
+# Compute B = exp(A) and normalize the rows of B so that the largest
+# entry in each row is 1.
+normalize.loglikelihoods <- function (A)
+  exp(A - apply(A,1,max))
+    

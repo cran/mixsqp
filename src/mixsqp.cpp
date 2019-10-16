@@ -11,27 +11,24 @@
 //
 
 using namespace Rcpp;
+using namespace arma;
 
 // FUNCTION DECLARATIONS
 // ---------------------
-double mixobjective (const arma::mat& L, const arma::vec& w,
-		     const arma::vec& x, const arma::vec& e, 
-		     arma::vec& u);
-void   computegrad  (const arma::mat& L, const arma::vec& w,
-		     const arma::vec& x, const arma::vec& e, 
-		     arma::vec& g, arma::mat& H, arma::vec& u, 
-		     arma::mat& Z, const arma::mat& I);
-double activesetqp (const arma::mat& H, const arma::vec& g, arma::vec& y,
-		    arma::uvec& t, int maxiteractiveset,
-		    double zerothresholdsearchdir, 
-		    double convtolactiveset);
-void backtrackinglinesearch (double f, const arma::mat& L,
-			     const arma::vec& w, const arma::vec& g,
-			     const arma::vec& x, const arma::vec& p,
-			     const arma::vec& eps, double suffdecr,
+double mixobjective (const mat& L, const vec& w, const vec& x, const vec& e, 
+		     vec& u);
+void   computegrad  (const mat& L, const vec& w, const vec& x, const vec& e, 
+		     vec& g, mat& H, vec& u, mat& Z);
+double activesetqp  (const mat& H, const vec& g, vec& y, uvec& t,
+		     int maxiteractiveset, double zerothresholdsearchdir, 
+		     double convtolactiveset, double identitycontribincrease);
+void computeactivesetsearchdir (const mat& H, const vec& y, vec& p,
+				mat& B, double ainc);
+void backtrackinglinesearch (double f, const mat& L, const vec& w,
+			     const vec& g, const vec& x, const vec& p,
+			     const vec& eps, double suffdecr,
 			     double stepsizereduce, double minstepsize, 
-			     double& nls, double& stepsize, arma::vec& y,
-			     arma::vec& u);
+			     double& nls, double& stepsize, vec& y, vec& u);
 
 // FUNCTION DEFINITIONS
 // --------------------
@@ -45,38 +42,24 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
                   double convtolsqp, double convtolactiveset,
 		  double zerothresholdsolution, double zerothresholdsearchdir,
 		  double suffdecr, double stepsizereduce, double minstepsize,
-		  const arma::vec& eps, double delta, int maxitersqp,
-		  int maxiteractiveset, bool verbose) {
+		  double identitycontribincrease, const arma::vec& eps,
+		  int maxitersqp, int maxiteractiveset, bool verbose) {
   
   // Get the number of rows (n) and columns (m) of the conditional
   // likelihood matrix.
   int n = L.n_rows;
   int m = L.n_cols;
 
-  // Print a brief summary of the analysis, if requested.
-  if (verbose) {
-    Rprintf("Running mix-SQP algorithm 0.1-97 on %d x %d matrix\n",n,m);
-    Rprintf("convergence tol. (SQP):     %0.1e\n",convtolsqp);
-    Rprintf("conv. tol. (active-set):    %0.1e\n",convtolactiveset);
-    Rprintf("zero threshold (solution):  %0.1e\n",zerothresholdsolution);
-    Rprintf("zero thresh. (search dir.): %0.1e\n",zerothresholdsearchdir);
-    Rprintf("l.s. sufficient decrease:   %0.1e\n",suffdecr);
-    Rprintf("step size reduction factor: %0.1e\n",stepsizereduce);
-    Rprintf("minimum step size:          %0.1e\n",minstepsize);
-    Rprintf("max. iter (SQP):            %d\n",maxitersqp);
-    Rprintf("max. iter (active-set):     %d\n",maxiteractiveset);
-  }
-  
   // PREPARE DATA STRUCTURES
   // -----------------------
   // Initialize storage for the outputs obj, gmin, nnz, nqp and dmax.
-  arma::vec obj(maxitersqp);
-  arma::vec gmin(maxitersqp);
-  arma::vec nnz(maxitersqp);
-  arma::vec nqp(maxitersqp);
-  arma::vec nls(maxitersqp);
-  arma::vec stepsize(maxitersqp);
-  arma::vec dmax(maxitersqp);
+  vec obj(maxitersqp);
+  vec gmin(maxitersqp);
+  vec nnz(maxitersqp);
+  vec nqp(maxitersqp);
+  vec nls(maxitersqp);
+  vec stepsize(maxitersqp);
+  vec dmax(maxitersqp);
   obj.zeros();
   gmin.zeros();
   nnz.zeros();
@@ -86,47 +69,37 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
   dmax.fill(-1);
 
   // Initialize the solution.
-  arma::vec x = x0;
+  vec x = x0;
   
   // Initialize storage for matrices and vectors used in the
   // computations below.
-  arma::vec  g(m);    // Vector of length m storing the gradient.
-  arma::vec  p(m);    // Vector of length m storing the search direction.
-  arma::vec  u(n);    // Vector of length n storing L*x + eps or its log.
-  arma::mat  H(m,m);  // m x m matrix storing Hessian.
-  arma::mat  Z(n,m);  // n x m matrix Z = D*L, where D = diag(1/(L*x+e)).
-  arma::mat  I(m,m);  // m x m diagonal matrix e*I.
-  arma::uvec t(m);    // Temporary unsigned int. vector result of length m.
-  arma::vec  y(m);    // Vector of length m storing y
-  arma::vec  d(m);    // Vector of length m storing absolute
-		      // differences between between two solution
-		      // estimates.
+  vec  g(m);    // Vector of length m storing the gradient.
+  vec  ghat(m); // Vector of length m storing gradient of subproblem.
+  vec  p(m);    // Vector of length m storing the search direction.
+  vec  u(n);    // Vector of length n storing L*x + eps or its log.
+  mat  H(m,m);  // m x m matrix storing Hessian.
+  mat  Z(n,m);  // n x m matrix Z = D*L, where D = diag(1/(L*x+e)).
+  uvec t(m);    // Temporary unsigned int. vector result of length m.
+  vec  y(m);    // Vector of length m storing y
+  vec  d(m);    // Vector of length m storing absolute
+                // differences between between two solution
+	        // estimates.
   
   double status = 1;  // Convergence status.
   
-  // This is used in computing the Hessian matrix.
-  I  = arma::eye(m,m);
-  I *= delta;
-  
   // Initialize some loop variables used in the loops below.
   int i = 0; 
-  
-  // Print the column labels for reporting the algorithm's progress.
-  if (verbose) {
-    Rprintf("iter        objective max(rdual) nnz stepsize max.diff nqp nls");
-    Rprintf("\n");
-  }
   
   // Repeat until the convergence criterion is met, or until we reach
   // the maximum number of (outer loop) iterations.
   for (i = 0; i < maxitersqp; i++) {
 
     // Compute the value of the objective at x (obj).
-    obj[i] = mixobjective(L,w,x,eps,u);
+    obj(i) = mixobjective(L,w,x,eps,u);
 
     // COMPUTE GRADIENT AND HESSIAN
     // ----------------------------
-    computegrad(L,w,x,eps,g,H,u,Z,I);
+    computegrad(L,w,x,eps,g,H,u,Z);
     
     // Determine the nonzero co-ordinates in the current estimate of
     // the solution, x. This specifies the "inactive set".
@@ -137,16 +110,16 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
     // criterion; and the number of nonzeros in the solution (nnz).
     // Note that only the dual residuals (gmin's) corresponding to the
     // nonzero co-ordinates are relevant.
-    gmin[i] = 1 + g.min();
-    nnz[i]  = sum(t);
+    gmin(i) = 1 + g.min();
+    nnz(i)  = sum(t);
     if (verbose) {
       if (i == 0)
-        Rprintf("%4d %+0.9e %+0.3e%4d       NA       NA  NA  NA\n",
-		i + 1,obj[i],-gmin[i],int(nnz[i]));
+        Rprintf("%4d %+0.9e %+0.3e%4d  ------   ------   --  --\n",
+		i + 1,obj(i),-gmin(i),int(nnz(i)));
       else
-        Rprintf("%4d %+0.9e %+0.3e%4d %0.2e %0.2e %3d %3d\n",i + 1,obj[i],
-		-gmin[i],(int) nnz[i],stepsize[i-1],dmax[i-1],
-		(int) nqp[i-1],(int) nls[i-1]);
+        Rprintf("%4d %+0.9e %+0.3e%4d %0.2e %0.2e %3d %3d\n",i + 1,obj(i),
+		-gmin(i),(int) nnz(i),stepsize(i-1),dmax(i-1),
+		(int) nqp(i-1),(int) nls(i-1));
     }
     
     // CHECK CONVERGENCE
@@ -159,7 +132,7 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
     // is trivially satisfied for the zero co-ordinates as the
     // gradient must be non-negative for these co-ordinates. (See
     // communication with Youngseok on Slack.)
-    if (gmin[i] >= -convtolsqp) {
+    if (gmin(i) >= -convtolsqp) {
       status = 0;
       i++;
       break;
@@ -173,19 +146,21 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
     // SOLVE QUADRATIC SUBPROBLEM
     // --------------------------
     // Run the active-set solver to obtain a search direction.
-    nqp[i] = activesetqp(H,g,y,t,maxiteractiveset,zerothresholdsearchdir,
-			 convtolactiveset);
+    ghat   = g - H*x + 1;
+    y      = x;
+    nqp(i) = activesetqp(H,ghat,y,t,maxiteractiveset,zerothresholdsearchdir,
+			 convtolactiveset,identitycontribincrease);
     p = y - x;
     
     // BACKTRACKING LINE SEARCH
     // ------------------------
-    backtrackinglinesearch(obj[i],L,w,g,x,p,eps,suffdecr,stepsizereduce,
-			   minstepsize,nls[i],stepsize[i],y,u);
+    backtrackinglinesearch(obj(i),L,w,g,x,p,eps,suffdecr,stepsizereduce,
+			   minstepsize,nls(i),stepsize(i),y,u);
     
     // UPDATE THE SOLUTION
     // -------------------
     d       = abs(x - y);
-    dmax[i] = d.max();
+    dmax(i) = d.max();
     x = y;
   }
 
@@ -207,8 +182,8 @@ List mixsqp_rcpp (const arma::mat& L, const arma::vec& w, const arma::vec& x0,
 // is an additional positive constant near zero. Input argument u is a
 // vector of length n used to store an intermediate result used in the
 // calculation of the objective.
-double mixobjective (const arma::mat& L, const arma::vec& w,
-		     const arma::vec& x, const arma::vec& e, arma::vec& u) {
+double mixobjective (const mat& L, const vec& w, const vec& x, const vec& e,
+		     vec& u) {
   u = L*x + e;
   if (u.min() <= 0)
     Rcpp::stop("Halting because the objective function has a non-finite value (logarithms of numbers less than or equal to zero) at the current estimate of the solution");
@@ -222,146 +197,202 @@ double mixobjective (const arma::mat& L, const arma::vec& w,
 // vector of length m, and an m x m matrix). Intermediate results used
 // in these calculations are stored in three variables: u, a vector of
 // length n; Z, an n x m matrix; and ZW, another n x m matrix.
-void computegrad (const arma::mat& L, const arma::vec& w, const arma::vec& x,
-		  const arma::vec& e, arma::vec& g, arma::mat& H, arma::vec& u,
-		  arma::mat& Z, const arma::mat& I) {
+void computegrad (const mat& L, const vec& w, const vec& x, const vec& e,
+		  vec& g, mat& H, vec& u, mat& Z) {
    
-  // Compute the gradient g = -L'*u where u = w./(L*x + e), and "./"
-  // denotes element-wise division.
+  // Compute the gradient g = -L'*(w.*u) where u = 1./(L*x + e), ".*"
+  // denotes element-wise multiplication, and "./" denotes
+  // element-wise division.
   u = L*x + e;
   u = w / u;
   g = -trans(L) * u;
-    
+  
   // Compute the Hessian H = L'*U*W*U*L, where U = diag(u) and 
   // W = diag(w), with vector u defined as above.
   Z = L;
-  u = L*x + e;
-  u = sqrt(w) / u;
+  u /= sqrt(w);
   Z.each_col() %= u;
-  H = trans(Z) * Z + I;
+  H = trans(Z) * Z;
 }
 
 // This implements the active-set method from p. 472 of of Nocedal &
 // Wright, Numerical Optimization, 2nd ed, 2006.
-double activesetqp (const arma::mat& H, const arma::vec& g, arma::vec& y,
-		    arma::uvec& t, int maxiteractiveset,
-		    double zerothresholdsearchdir, 
-		    double convtolactiveset) {
-  int    m     = g.n_elem;
-  double nnz   = sum(t);
-  double alpha = 1;  // The step size.
-  int    newind;     // New index to be added or deleted.
-  int    j;
-  arma::vec b(m);    // Vector of length m storing H*y + 2*g + 1.
-  arma::vec p(m);    // Vector of length m storing the search direction.
+double activesetqp (const mat& H, const vec& g, vec& y, uvec& t,
+		    int maxiteractiveset, double zerothresholdsearchdir, 
+		    double convtolactiveset, double identitycontribincrease) {
+  int    m = g.n_elem;
+  double alpha;  // The step size.
+  int    j, k;
+  vec    b(m);   // Vector of length m storing H*y + 2*g + 1.
+  vec    p(m);   // Vector of length m storing the search direction.
+  vec    p0(m);  // Search direction for nonzero co-ordinates only.
+  vec    bs(m);
+  vec    z(m);
+  mat    Hs(m,m);
+  mat    B(m,m);
+  uvec   S(m);
+  uvec   i0(m);
+  uvec   i1(m);
   
-  // Initialize the solution to the QP subproblem, y.
-  arma::uvec i0 = find(1 - t);
-  arma::uvec i1 = find(t);
-  y.fill(0);
-  y.elem(i1).fill(1/nnz);
+  // Any co-ordinates belonging to the working set should be set to zero.
+  i0 = find(t == 0);
+  if (i0.n_elem > 0)
+    y.elem(i0).fill(0);
     
   // Run active set method to solve the QP subproblem.
   for (j = 0; j < maxiteractiveset; j++) {
-      
+    
     // Define the smaller QP subproblem.
-    b = H*y + 2*g + 1;
-    arma::vec bs = b.elem(i1);
-    arma::mat Hs = H.elem(i1,i1);
+    i0 = find(t == 0);
+    i1 = find(t > 0);
+    b  = H*y + g;
+    bs = b.elem(i1);
+    Hs = H.elem(i1,i1);
       
     // Solve the smaller problem.
     p.fill(0);
-    p.elem(i1) = -solve(Hs,bs);
-      
+    computeactivesetsearchdir(Hs,bs,p0,B,identitycontribincrease);
+    p.elem(i1) = p0;
+
     // Reset the step size.
     alpha = 1;
-      
-    // First check that the search direction is close to zero
-    // (according to the "zerothresholdsearchdir" parameter).
+    
+    // Check that the search direction is close to zero (according to
+    // the "zerothresholdsearchdir" parameter).
     if ((p.max() <= zerothresholdsearchdir) &
-	(-p.min() <= zerothresholdsearchdir) &
-        (i0.n_elem > 0)) {
+	(-p.min() <= zerothresholdsearchdir)) {
         
       // If all the Lagrange multiplers in the working set (that is,
       // zeroed co-ordinates) are positive, or nearly positive, we
       // have reached a suitable solution.
-      if (b(i0).min() >= -convtolactiveset) {
+      if (i0.n_elem == 0) {
 	j++;
-        break;
+	break;
+      } else if (b(i0).min() >= -convtolactiveset) {
+	j++;
+	break;
       }
 
-      // Find an index with smallest multiplier, and add this to the
-      // inactive set.
-      newind     = i0[b(i0).index_min()];
-      t[newind]  = 1;
-      i0         = find(1 - t);
-      i1         = find(t);
+      // Find an co-ordinate with the smallest multiplier, and remove
+      // it from the working set.
+      k    = i0(b(i0).index_min());
+      t(k) = 1;
 
     // In this next part, we consider adding a co-ordinate to the
-    // working set, but only if there is at least 2 non-zero
-    // co-ordinates.
-    } else if (sum(t) > 1) {
-        
+    // working set (but only if there are two or more non-zero
+    // co-ordinates).
+    } else {
+      
       // Define the step size.
-      arma::uvec act = find(p < 0);
-      if (!act.is_empty()) {
-        arma::vec alp = -y.elem(act)/p.elem(act);
-        newind        = alp.index_min();
-        if (alp[newind] < 1) {
-            
-          // Blocking constraint exists; find and delete it.
-          alpha          = alp[newind]; 
-          t[act[newind]] = 0;
-          i1             = find(t);
-	  i0             = find(1 - t);
+      alpha = 1;
+      p0    = p;
+      if (i0.n_elem > 0)
+        p0.elem(i0).fill(0);
+      S = find(p0 < -1e-15);
+      if (!S.is_empty()) {
+        z = -y.elem(S)/p.elem(S);
+        k = z.index_min();
+        if (z(k) < 1) {
+
+          // Blocking constraint exists; find and add it to the
+          // working set (but only if there are two or more non-zero
+          // co-ordinates).
+          alpha = z(k);
+	  if (i1.n_elem >= 2)
+	    t(S(k)) = 0;
         }
       }
-    }
       
-    // Move to the new "inner loop" iterate (y) along the search
-    // direction.
-    y += alpha * p;
+      // Move to the new "inner loop" iterate (y) along the search
+      // direction.
+      y += alpha * p;
+    }
   }
 
   return j;
 }
 
+// This implements Algorithm 3.3, "Cholesky with added multiple of the
+// identity", from Nocedal & Wright, 2nd ed, p. 51.
+void computeactivesetsearchdir (const mat& H, const vec& y, vec& p,
+				mat& B, double ainc) {
+  double a0   = 1e-15;
+  double amax = 1;
+  int    n = y.n_elem;
+  double d = H.diag().min();
+  double a = 0;
+  mat    I(n,n,fill::eye);
+  mat    R(n,n);
+
+  // Initialize the scalar multiplier for the identity matrix.
+  if (d < 0)
+    a = a0 - d;
+
+  // Repeat until a modified Hessian is found that is symmetric
+  // positive definite, or until we cannot modify it any longer.
+  while (true) {
+
+    // Compute the modified Hessian.
+    B = H + a*I;
+    
+    // Attempt to compute the Cholesky factorization of the modified
+    // Hessian. If this fails, increase the contribution of the
+    // identity matrix in the modified Hessian.
+    if (chol(R,B) | (a*ainc > amax))
+      break;
+    else if (a <= 0)
+      a = a0;
+    else
+      a *= ainc;
+  }
+  
+  // Compute the search direction using the modified Hessian.
+  p = solve(B,-y);
+}
+
 // This implements the backtracking line search algorithm from p. 37
-// of Nocedal & Wright, Numerical Optimization, 2nd ed, 2006. The
-// return value is the number of line search iterations needed to
-// identify a step size satisfying the "sufficient decrease"
-// condition.
-// 
-// Note that sum(x) = sum(y) = 1, so replacing g by g + 1 in dot product
-// of p and g has no effect.
-void backtrackinglinesearch (double f, const arma::mat& L,
-			     const arma::vec& w, const arma::vec& g,
-			     const arma::vec& x, const arma::vec& p,
-			     const arma::vec& eps, double suffdecr,
+// of Nocedal & Wright, Numerical Optimization, 2nd ed, 2006.
+void backtrackinglinesearch (double f, const mat& L, const vec& w,
+			     const vec& g, const vec& x, const vec& p,
+			     const vec& eps, double suffdecr,
 			     double stepsizereduce, double minstepsize, 
-			     double& nls, double& stepsize, arma::vec& y,
-			     arma::vec& u) {
+			     double& nls, double& stepsize, vec& y, vec& u) {
   double fnew;
-  stepsize = 1;
+  double newstepsize;
+  stepsize = 0.99;
   nls      = 0;
 
   // Iteratively reduce the step size until either (1) we can't reduce
   // any more (because we have hit the minimum step size constraint),
   // or (2) the new candidate solution satisfies the "sufficient
   // decrease" condition.
-  while (stepsizereduce * stepsize >= minstepsize) {
+  while (true) {
     y    = x + stepsize*p;
     fnew = mixobjective(L,w,y,eps,u);
     nls++;
 
     // Check whether the new candidate solution (y) satisfies the
-    // sufficient decrease condition. If so, accept this candidate
-    // solution.
-    if (fnew <= f + suffdecr*stepsize*dot(p,g))
+    // sufficient decrease condition, and remains feasible. If so,
+    // accept this candidate solution.
+    if ((y.min() >= 0) &
+	(fnew + sum(y) <= f + sum(x) + suffdecr*stepsize*dot(p,g + 1)))
       break;
+    newstepsize = stepsizereduce * stepsize;
+    if (newstepsize < minstepsize) {
 
+      // We need to terminate backtracking line search because we have
+      // arrived at the smallest allowable step size.
+      stepsize = minstepsize;
+      y        = x + stepsize*p;
+      if (y.min() < 0) {
+	stepsize = 0;
+	y        = x;
+      }
+      break;
+    }
+    
     // The new candidate does not satisfy the sufficient decrease
     // condition, so we need to try again with a smaller step size.
-    stepsize *= stepsizereduce;
+    stepsize = newstepsize;
   }
 }
