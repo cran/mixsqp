@@ -5,8 +5,13 @@
 \alias{mixsqp_control_default}
 \title{Maximum-likelihood estimation of mixture proportions using SQP}
 \usage{
-mixsqp(L, w = rep(1, nrow(L)), x0 = rep(1, ncol(L)), log = FALSE,
-  control = list())
+mixsqp(
+  L,
+  w = rep(1, nrow(L)),
+  x0 = rep(1, ncol(L)),
+  log = FALSE,
+  control = list()
+)
 
 mixsqp_control_default()
 }
@@ -140,6 +145,28 @@ algorithm settings (as they are defined by
 
 \describe{
 
+\item{\code{normalize.rows}}{When \code{normalize.rows = TRUE}, the
+rows of the data matrix \code{L} are automatically scaled so that
+the largest entry in each row is 1. This is the recommended setting
+for better stability of the optimization. When \code{log = TRUE},
+this setting is ignored becase the rows are already normalized.
+Note that the objective is computed on the original (unnormalized)
+matrix to make the results easier to interpret.}
+
+\item{force.sparse.init}{The computational complexity of the SQP
+updates grows rapidly by the number of nonzeros in the current
+solution estimate. When \code{force.sparse.init = TRUE}, and there
+are more than 20 nonzeros in the solution before beginning the SQP
+updates, only the 20 largest entries are kept, the rest are forced
+to zero.}
+
+\item{\code{tol.svd}}{Setting used to determine rank of truncated
+SVD approximation for L. The rank of the truncated singular value
+decomposition is determined by the number of singular values
+surpassing \code{tol.svd}. When \code{tol.svd = 0} or when \code{L}
+has 4 or fewer columns, all computations are performed using full L
+matrix.}
+
 \item{\code{convtol.sqp}}{A small, non-negative number
 specifying the convergence tolerance for SQP algorithm; convergence
 is reached when the maximum dual residual in the Karush-Kuhn-Tucker
@@ -210,7 +237,7 @@ active-set method.}
 \item{\code{maxiter.activeset}}{Maximum number of active-set
 iterations taken to solve each of the quadratic subproblems. If
 \code{NULL}, the maximum number of active-set iterations is set to
-\code{min(100,1 + ncol(L))}.}
+\code{min(20,1 + ncol(L))}.}
 
 \item{\code{numiter.em}}{Number of expectation maximization (EM)
 updates to perform prior to running mix-SQP. This can help ensure
