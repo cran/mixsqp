@@ -36,7 +36,7 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' 
 #' The Expectation Maximization (EM) algorithm can be used to solve
 #' this optimization problem, but it is intolerably slow in many
-#' interesting cases, and mixsqp is much faster.
+#' interesting cases, and mixsqp is much faster. 
 #'
 #' A special feature of this optimization problem is that the gradient
 #' of the objective does not change with re-scaling; for example, if
@@ -63,6 +63,15 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' large \code{L} matrices, but only when R has been configured with a
 #' multithreaded BLAS/LAPACK library (e.g., OpenBLAS).
 #'
+#' A "debugging mode" is provided to aid in reproducing convergence
+#' failures or other issues. When activated, mixsqp will generate an
+#' .RData file containing the exact \code{mixsqp} inputs, and will
+#' stop execution upon convergence failure. To activate the debugging
+#' mode, run \code{options(mixsqp.debug.mode = TRUE)} prior to calling
+#' \code{mixsqp}. By default, the output file is \code{mixsqp.RData};
+#' the file can be changed by setting the \code{"mixsqp.debug.file"}
+#' global option.
+#' 
 #' The \code{control} argument is a list in which any of the
 #' following named components will override the default optimization
 #' algorithm settings (as they are defined by
@@ -78,20 +87,13 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' Note that the objective is computed on the original (unnormalized)
 #' matrix to make the results easier to interpret.}
 #'
-#' \item{force.sparse.init}{The computational complexity of the SQP
-#' updates grows rapidly by the number of nonzeros in the current
-#' solution estimate. When \code{force.sparse.init = TRUE}, and there
-#' are more than 20 nonzeros in the solution before beginning the SQP
-#' updates, only the 20 largest entries are kept, the rest are forced
-#' to zero.}
-#'
 #' \item{\code{tol.svd}}{Setting used to determine rank of truncated
 #' SVD approximation for L. The rank of the truncated singular value
 #' decomposition is determined by the number of singular values
 #' surpassing \code{tol.svd}. When \code{tol.svd = 0} or when \code{L}
 #' has 4 or fewer columns, all computations are performed using full L
 #' matrix.}
-#' 
+#'
 #' \item{\code{convtol.sqp}}{A small, non-negative number
 #' specifying the convergence tolerance for SQP algorithm; convergence
 #' is reached when the maximum dual residual in the Karush-Kuhn-Tucker
@@ -165,8 +167,9 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' \code{min(20,1 + ncol(L))}.}
 #'
 #' \item{\code{numiter.em}}{Number of expectation maximization (EM)
-#' updates to perform prior to running mix-SQP. This can help ensure
-#' convergence of mix-SQP when the initial solution is very poor.}
+#' updates to perform prior to running mix-SQP. Although EM can often
+#' be slow to converge, this "pre-fitting" step can help to obtain a
+#' good initial estimate for mix-SQP at a small cost.}
 #' 
 #' \item{\code{verbose}}{If \code{verbose = TRUE}, the algorithm's
 #' progress and a summary of the optimization settings are printed to
@@ -231,6 +234,12 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' \item{value}{The value of the objective function, \eqn{f(x)}, at
 #' \code{x}.}
 #'
+#' \item{grad}{The gradient of the objective function at \code{x}.}
+#'
+#' \item{hessian}{The Hessian of the objective function at
+#' \code{x}. The truncated SVD approximation of L is used to compute
+#' the Hessian when it is also used for mix-SQP.}
+#' 
 #' \item{status}{A character string describing the status of the
 #' algorithm upon termination.}
 #'
@@ -277,6 +286,7 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' @useDynLib mixsqp
 #'
 #' @importFrom utils modifyList
+#' @importFrom utils sessionInfo
 #' @importFrom irlba irlba
 #' @importFrom Rcpp evalCpp
 #' 
@@ -284,7 +294,17 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #' 
 mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
                     log = FALSE, control = list()) {
-  
+
+  # SAVE INPUTS (debug mode only)
+  # -----------------------------
+  if (getOption("mixsqp.debug.mode")) {
+    out.file <- getOption("mixsqp.debug.file")
+    sinfo    <- sessionInfo()
+    message("mixsqp debugging mode is turned on; writing mixsqp inputs and ",
+            "sessionInfo to ",out.file)
+    save(list = c("L","w","x0","log","control","sinfo"),file = out.file)
+  }
+    
   # CHECK & PROCESS INPUTS
   # ----------------------
   # Check and process the likelihood matrix and, if necessary, coerce
@@ -299,9 +319,10 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
     storage.mode(L) <- "double"
 
   # Get the number of rows (n) and columns (m) of the matrix L.
-  n <- nrow(L)
-  m <- ncol(L)
-
+  n      <- nrow(L)
+  m      <- ncol(L)
+  coords <- colnames(L)
+      
   # Check and process the weights.
   w <- verify.weights(L,w)
 
@@ -322,7 +343,6 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
     stop("Argument \"control\" contains unknown parameter names")
   control <- modifyList(control0,control,keep.null = TRUE)
   normalize.rows            <- control$normalize.rows
-  force.sparse.init         <- control$force.sparse.init
   tol.svd                   <- control$tol.svd
   convtol.sqp               <- control$convtol.sqp
   convtol.activeset         <- control$convtol.activeset
@@ -379,10 +399,9 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
     stop(paste("Behavior of algorithm will be unpredictable if",
                "zero.threshold > 1/m, where m = ncol(X)"))
   
-  # Input arguments "normalize.rows", "force.sparse.init" and
-  # "verbose" should be TRUE or FALSE.
+  # Input arguments "normalize.rows" and "verbose" should be TRUE or
+  # FALSE.
   verify.logical.arg(normalize.rows)
-  verify.logical.arg(force.sparse.init)
   verify.logical.arg(verbose)
   
   # When all the entries of one or more columns are zero, the mixture
@@ -396,7 +415,7 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
                   "\"x\" are zero. No optimization algorithm was needed."))
     x               <- rep(0,m)
     x[nonzero.cols] <- 1
-    names(x)        <- colnames(L)
+    names(x)        <- coords
     return(list(x        = x,
                 status   = mixsqp.status.didnotrun,
                 value    = mixobj(L,w,x),
@@ -425,7 +444,7 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
   
   # Print a brief summary of the analysis, if requested.
   if (verbose) {
-    cat(sprintf("Running mix-SQP algorithm 0.3-17 on %d x %d matrix\n",n,m))
+    cat(sprintf("Running mix-SQP algorithm 0.3-43 on %d x %d matrix\n",n,m))
     cat(sprintf("convergence tol. (SQP):     %0.1e\n",convtol.sqp))
     cat(sprintf("conv. tol. (active-set):    %0.1e\n",convtol.activeset))
     cat(sprintf("zero threshold (solution):  %0.1e\n",zero.threshold.solution))
@@ -462,9 +481,12 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
       if (ncol(out$U) < m) {
 
         # Only use the SVD of L if it might be worthwhile to do so.
-        U       <- out$U
-        V       <- out$V
-        use.svd <- TRUE
+        U           <- out$U
+        V           <- out$V
+        rownames(U) <- rownames(L)
+        rownames(V) <- colnames(L)
+        L           <- tcrossprod(U,V)
+        use.svd     <- TRUE
       }
       rm(out)
     }
@@ -489,25 +511,18 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
     cat("iter        objective max(rdual) nnz stepsize max.diff nqp nls\n")
   t1 <- proc.time()
   if (numiter.em > 0) {
-    out         <- run.mixem.updates(L,w,x,z,numiter.em,eps,
-                                     zero.threshold.solution,verbose)
-    x           <- out$x
+    out <- run.mixem.updates(L,w,x,z,numiter.em,eps,zero.threshold.solution,
+                             verbose)
+    x <- out$x
     progress.em <- out$progress
     rm(out)
   } else
     progress.em <- NULL
-
-  # MAKE SOLUTION SPARSE
-  # --------------------
-  # If force.sparse.init = TRUE, and there are more than 20 nonzeros
-  # in the current solution estimate, force the solution estimate to
-  # have exactly 20 nonzeros.
-  if (force.sparse.init & sum(x > 0) > 20)
-    x <- force.sparse(x,20)
   
   # SOLVE OPTIMIZATION PROBLEM USING mix-SQP
   # ----------------------------------------
-  out <- mixsqp_rcpp(L,U,V,w,z,x,use.svd,convtol.sqp,convtol.activeset,
+  runem <- TRUE
+  out <- mixsqp_rcpp(L,U,V,w,z,x,use.svd,runem,convtol.sqp,convtol.activeset,
                      zero.threshold.solution,zero.threshold.searchdir,
                      suffdecr.linesearch,stepsizereduce,minstepsize,
                      identity.contrib.increase,eps,maxiter.sqp,
@@ -526,15 +541,26 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
   # the optimal solution, and a status = 1 means that the algorithm
   # reached the maximum number of iterations before converging to a
   # solution.
-  if (out$status == 0)
+  if (out$status == 0) {
     status <- mixsqp.status.converged
-  else
-    status <- mixsqp.status.didnotconverge
-  if (verbose) {
-    if (out$status == 0)
+    if (verbose)
       cat("Convergence criteria met---optimal solution found.\n")
+  } else {
+    status <- mixsqp.status.didnotconverge
+    msg <- paste(strwrap(paste("Failed to converge within iterations limit.",
+      "If \"maxiter.sqp\" is small, consider increasing it. Otherwise,",
+      "convergence failure is typically a numerical issue remedied by",
+      "increasing \"eps\" slightly, at the cost of slightly less accurate",
+      "solution; see help(mixsqp). An issue report may also be submitted",
+      "to https://github.com/stephenslab/mixsqp/issues, accompanied by an",
+      ".rds or .RData file containing the mixsqp inputs. If these inputs",
+      "are not accessible, an .RData file containing the inputs can be",
+      "generated by setting options(mixsqp.debug.mode = TRUE) before",
+      "running mixsqp.")),collapse = "\n")  
+    if (getOption("mixsqp.debug.mode"))
+      stop(msg)
     else
-      cat("Failed to converge within iterations limit.\n")
+      warning(msg)
   }
 
   # POST-PROCESS RESULT
@@ -548,26 +574,39 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
   out$nqp[out$nqp < 0]           <- NA
   out$nls[out$nls < 0]           <- NA
 
-  # Compute the value of the objective at the estimated solution.
+  # Compute the objective, gradient and Hessian at the estimated
+  # solution.
+  e <- control$eps
   f <- mixobj(L,w,x,z)
-  
+  u <- drop(L %*% x + e)
+  g <- drop((-w/u) %*% L)
+  if (use.svd)
+    H <- V %*% crossprod(sqrt(w)/u * U) %*% t(V)
+  else
+    H <- crossprod(sqrt(w)/u * L)
+
   # If necessary, insert the zero mixture weights associated with the
   # columns of zeros.
   if (m < m0) {
     xnz <- x
-    x   <- rep(0,m)
+    x   <- rep(0,m0)
     x[nonzero.cols] <- xnz
   }
   
   # Label the elements of the solution (x) by the column labels of the
   # likelihood matrix (L).
-  names(x) <- colnames(L)
-
+  names(x)    <- coords
+  names(g)    <- colnames(L)
+  rownames(H) <- colnames(L)
+  colnames(H) <- colnames(L)
+  
   # CONSTRUCT OUTPUT
   # ----------------
   return(list(x        = x,
               status   = status,
               value    = f,
+              grad     = g,
+              hessian  = H,
               progress = rbind(progress.em,
                                data.frame(objective = out$objective,
                                           max.rdual = out$max.rdual,
@@ -584,12 +623,11 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
 #' 
 mixsqp_control_default <- function()
   list(normalize.rows            = TRUE,
-       force.sparse.init         = TRUE,
        tol.svd                   = 1e-6,
        convtol.sqp               = 1e-8,
        convtol.activeset         = 1e-10,
        zero.threshold.solution   = 1e-8,
-       zero.threshold.searchdir  = 1e-10,
+       zero.threshold.searchdir  = 1e-14,
        suffdecr.linesearch       = 0.01,
        stepsizereduce            = 0.75,
        minstepsize               = 1e-8,
@@ -600,53 +638,16 @@ mixsqp_control_default <- function()
        numiter.em                = 10,
        verbose                   = TRUE)
 
-# Return x such that the top n entries are the same (up to a constant
-# of proportionality), and the remaining entries are zero.
-force.sparse <- function (x, n) {
-  i    <- order(x,decreasing = TRUE)
-  i    <- i[1:n]
-  y    <- x
-  y[]  <- 0
-  y[i] <- x[i]
-  return(y/sum(y))
-}
-
 # This function is used within mixsqp to run several EM updates.
-run.mixem.updates <- function (L, w, x, z, numiter, eps,
-                               zero.threshold, verbose) {
-  progress <- data.frame(objective = rep(0,numiter),
+run.mixem.updates <- function (L, w, x, z, numiter, eps, zero.threshold,
+                               verbose) {
+  out      <- mixem_rcpp(L,w,z,x,eps,numiter,zero.threshold,verbose)
+  progress <- data.frame(objective = drop(out$objective),
                          max.rdual = rep(as.numeric(NA),numiter),
-                         nnz       = rep(as.numeric(NA),numiter),
+                         nnz       = drop(out$nnz),
                          stepsize  = rep(1,numiter),
-                         max.diff  = rep(0,numiter),
+                         max.diff  = drop(out$max.diff),
                          nqp       = rep(as.numeric(NA),numiter),
                          nls       = rep(as.numeric(NA),numiter))
-  for (i in 1:numiter) {
-    x0 <- x
-    x  <- mixem.update(L,w,x,eps)
-    progress[i,"objective"] <- mixobj(L,w,x,z,eps)
-    progress[i,"max.diff"]  <- max(abs(x - x0))
-    progress[i,"nnz"]       <- sum(x >= zero.threshold)
-    if (verbose)
-      cat(sprintf("%4d %+0.9e  -- EM -- %4d 1.00e+00 %0.2e  --  --\n",
-                  i,progress[i,"objective"],progress[i,"nnz"],
-                  progress[i,"max.diff"]))
-  }
-  return(list(x = x,progress = progress))
-}
-
-# Perform a single expectation maximization (EM) update.
-mixem.update <- function (L, w, x, e) {
-
-  # E STEP
-  # ------
-  # Compute the n x m matrix of posterior mixture assignment
-  # probabilities (L is an n x m matrix).
-  P <- scale.cols(L,x) + e
-  P <- P / rowSums(P)
-
-  # M STEP
-  # ------
-  # Update the mixture weights.
-  return(drop(w %*% P))
+  return(list(x = drop(out$x),progress = progress))
 }

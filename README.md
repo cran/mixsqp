@@ -1,4 +1,4 @@
-# mixsqp: R package for fast maximum-likelihood estimation of mixture proportions using sequential quadratic programming
+# mixsqp: Fast maximum-likelihood estimation of mixture proportions using sequential quadratic programming
 
 [![CRAN status badge](https://www.r-pkg.org/badges/version/mixsqp)](https://cran.r-project.org/package=mixsqp)
 [![Travis Build Status](https://travis-ci.org/stephenslab/mixsqp.svg?branch=master)](https://travis-ci.org/stephenslab/mixsqp)
@@ -14,12 +14,11 @@ interior-point solver (called via the "KWDual" function in the
 [REBayes package][rebayes]), and is expected to compute these
 solutions much more quickly in large data sets.
 
-For more details on the SQP algorithm, please see [our paper on 
-arXiv][arxiv-paper].
+For more details on the methods, please see the [journal
+paper][jcgs-paper] or the [arXiv preprint][arxiv-paper].
 
-See also the [Julia implementation][mixsqp-julia], which, at time of
-writing, is faster than the R implementation, particularly for large
-data sets.
+The methods were originally implemented in [Julia][julia];
+please see [here][mixsqp-julia] for the Julia implementation.
 
 If you find a bug, or you have a question or feedback on our work,
 please post an [issue][issues].
@@ -30,13 +29,13 @@ If you find the mixsqp package or any of the source code in this
 repository useful for your work, please cite:
 
 > Youngseok Kim, Peter Carbonetto, Matthew Stephens and Mihai
-> Anitescu. *A fast algorithm for maximum likelihood estimation of
-> mixture proportions using sequential quadratic programming.*
-> [arXiv:1806.01412][arxiv-paper].
+> Anitescu. [A fast algorithm for maximum likelihood estimation of
+> mixture proportions using sequential quadratic programming.][jcgs-paper]
+> To appear in the *Journal of Computational and Graphical Statistics.*
 
 ## License
 
-Copyright (c) 2017-2019, Youngseok Kim, Peter Carbonetto, Matthew
+Copyright (c) 2017-2020, Youngseok Kim, Peter Carbonetto, Matthew
 Stephens and Mihai Anitescu.
 
 All source code and software in this repository are made available
@@ -91,7 +90,7 @@ from GitHub, use [devtools][devtools]:
 ```R
 install.packages("devtools")
 library(devtools)
-install_github("stephenslab/mixsqp")
+install_github("stephenslab/mixsqp",build_vignettes = TRUE)
 ```
 
 This command should automatically install all required packages if
@@ -104,7 +103,6 @@ package:
 
 ```R
 library(devtools)
-list.files(pattern = "mixsqp") # Should output "mixsqp".
 install_local("mixsqp")
 ```
 
@@ -140,8 +138,8 @@ in the shell:
 
 ```bash
 R CMD build mixsqp
-R CMD INSTALL mixsqp_0.3-17.tar.gz
-R CMD check --as-cran mixsqp_0.3-17.tar.gz
+R CMD INSTALL mixsqp_0.3-31.tar.gz
+R CMD check --as-cran mixsqp_0.3-31.tar.gz
 ```
 
 Note that these commands require that the dependencies have already
@@ -160,11 +158,10 @@ Run this line of R code to build the website (make sure you have an
 Internet connection while running the code):
 
 ```R
-library(pkgdown)
-build_site(mathjax = FALSE)
+pkgdown::build_site()
 ```
 
-Version 1.1.0 of pkgdown was used.
+Version 1.4.1 of pkgdown was used.
 
 ### Other developer notes
 
@@ -182,6 +179,8 @@ with contributions from [Matthew Stephens][matthew] and
 [mixsqp-vignette]: https://stephenslab.github.io/mixsqp/articles/mixsqp-intro.html
 [sqp]: https://neos-guide.org/content/sequential-quadratic-programming
 [arxiv-paper]: https://arxiv.org/abs/1806.01412
+[jcgs-paper]: https://doi.org/10.1080/10618600.2019.1689985
+[julia]: https://julialang.org
 [mixsqp-julia]: https://github.com/stephenslab/mixsqp-paper
 [issues]: https://github.com/stephenslab/mixsqp/issues
 [rebayes]: https://cran.r-project.org/package=REBayes

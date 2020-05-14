@@ -97,17 +97,15 @@ test_that(paste("mix-SQP and KWDual return the same solution for",
   expect_equal(out1$x,out2$x,tolerance = 1e-4,scale = 1)
   expect_equal(out1$value,out2$value,tolerance = 1e-8,scale = 1)
 
-  # The very small mixture weights estimated by KWDual are exactly
-  # zero in the mix-SQP output.
-  expect_equal(out1$x == 0,out2$x < 1e-4)
+  # The very small mixture weights estimated by KWDual are all smaller
+  # in the mix-SQP output.
+  i <- which(out2$x < 0.001)
+  expect_equivalent(out1$x[i] < out2$x[i],rep(TRUE,length(i)))
 })
 
 test_that(paste("mix-SQP & KWDual return the same solution for",
                 "1000 x 10 likelihood matrix with unequal row weights"),{
 
-  # The REBayes package is required to run this test.
-  skip_if_mixkwdual_doesnt_work()
-  
   # Simulate a 1000 x 10 likelihood matrix, and different weights for
   # the rows of this matrix.
   set.seed(1)
@@ -180,9 +178,9 @@ test_that(paste("mix-SQP returns the correct solution when log-likelihoods",
 test_that(paste("mix-SQP returns the same solution when using full data",
                 "matrix and the low-rank SVD approximation"),{
 
-  # Simulate a 1,000 x 40 likelihood matrix.
+  # Simulate a 1,000 x 80 likelihood matrix.
   set.seed(1)
-  L <- simulatemixdata(1000,40)$L
+  L <- simulatemixdata(1000,80)$L
   w <- runif(1000)
   w <- w/sum(w)
 
@@ -190,9 +188,12 @@ test_that(paste("mix-SQP returns the same solution when using full data",
   capture.output(out1 <- mixsqp(L,w,control = list(tol.svd = 0)))
   capture.output(out2 <- mixsqp(L,w,control = list(tol.svd = 1e-8)))
 
-  # The outputted solutions should be nearly identical.
-  expect_equal(out1$value,out2$value,tolerance = 1e-8,scale = 1)
-  expect_equal(out1$x,out2$x,tolerance = 1e-8,scale = 1)
+  # The outputted solutions---and the gradients and Hessians at the
+  # estimated solutions---should be nearly identical.
+  expect_equal(out1$value,out2$value,tolerance = 1e-6,scale = 1)
+  expect_equal(out1$x,out2$x,tolerance = 1e-6,scale = 1)
+  expect_equal(out1$grad,out2$grad,tolerance = 1e-6,scale = 1)
+  expect_equal(out1$hessian,out2$hessian,tolerance = 1e-6,scale = 1)
 })
 
 test_that("mix-SQP successfully \"escapes\" a sparse initial estimate",{
@@ -216,33 +217,30 @@ test_that("mix-SQP successfully \"escapes\" a sparse initial estimate",{
 test_that(paste("mix-SQP gives correct solution for Beckett & Diaconis",
                 "tack rolling example"),{
 
-  # For some reason this example is not behaving well on the i386
-  # architecture.
-  skip_on_appveyor()                  
   data(tacks)
-  L   <- tacks$L
-  w   <- tacks$w
+  L <- tacks$L
+  w <- tacks$w
   capture.output(out <- mixsqp(L,w))
 
-  # The mix-SQP solution should be very close to the KWDual solution
-  # and, more importantly, the quality of the mix-SQP solution should
-  # be as good or greater.
+  # The objective value at the mix-SQP solution should be very close
+  # to the objective value at the KWDual solution.
   expect_equal(out$status,mixsqp:::mixsqp.status.converged)
-  expect_equal(tacks$x,out$x,tolerance = 5e-4,scale = 1)
-  expect_lte(out$value,mixobjective(L,tacks$x,w))
+  expect_equal(mixobjective(L,out$x,w),mixobjective(L,tacks$x,w),
+               tolerance = 1e-4)
 })
 
 # This is mainly to test post-processing of the output when the
 # algorithm reaches the maximum number of iterations. This example is
 # used in one of the other tests above.
-test_that("mix-SQP does not report an error with convergence failure",{
+test_that("mix-SQP gives warning with convergence failure",{
   e <- 1e-8
   L <- rbind(c(1,1,e),
              c(1,1,1))
-  capture_output(out <- mixsqp(L,x0 = c(0,1,1),
-                               control = list(maxiter.sqp = 2)))
+  expect_warning(capture_output(out <- mixsqp(L,x0 = c(0,1,1),
+                                  control = list(numiter.em  = 0,
+                                                 maxiter.sqp = 1))))
   expect_equal(out$status,mixsqp.status.didnotconverge)
-  expect_equal(dim(out$progress),c(12,7))
+  expect_equal(dim(out$progress),c(1,7))
 })
 
 # This test comes from Issue #3.
@@ -278,8 +276,8 @@ test_that(paste("mix-SQP converges, and outputs correct solution, for example",
   # stability measure is used for the active-set linear systems (i.e.,
   # eps = 0). Also, when convtol.sqp = 0, the mix-SQP algorithm should
   # report that it failed to converge in this example.
-  capture.output(out1 <- mixsqp(L,control = list(eps = 0,convtol.sqp = 0,
-                                                 maxiter.sqp = 10)))
+  suppressWarnings(capture.output(out1 <-
+    mixsqp(L,control = list(eps = 0,convtol.sqp = 0,maxiter.sqp = 10))))
   capture.output(out2 <- mixsqp(L))
   capture.output(out3 <- mixsqp(L,control = list(eps = 0)))
   expect_equal(out1$status,"exceeded maximum number of iterations")
@@ -388,4 +386,52 @@ test_that("mix-SQP works for difficult smashr example",{
   skip_if_mixkwdual_doesnt_work()
   out2 <- mixkwdual(L)
   expect_equal(out1$x,out2$x,tolerance = 1e-6,scale = 1)
+})
+
+# This example was generated by running:
+#
+#   library(ashr)
+#   set.seed(1)
+#   logitp <- c(rep(0,800), runif(200,-3,3))
+#   p      <- 1/(1 + exp(-logitp))
+#   n      <- rep(100,1000)
+#   x      <- rbinom(1000,n,p)
+#   out    <- ash(rep(0,length(x)),1,lik = lik_binom(x,n,link = "logit"),
+#                 mode = "estimate")
+#
+test_that("mix-SQP works for difficult ashr example with binomial likelihood",{
+  skip_if_mixkwdual_doesnt_work()
+  load("ashr.binom.example.RData")
+  capture.output(out1 <- mixsqp(L))
+  out2 <- mixkwdual(L)
+  expect_equal(out1$value,out2$value,tolerance = 1e-8,scale = 1)
+  expect_equal(out1$x,out2$x,tolerance = 1e-4,scale = 1)
+})
+
+# This test comes from stephens999/ashr Issue #76.
+test_that("mix-SQP works for a difficult mashr example",{
+  skip_if_mixkwdual_doesnt_work()
+  skip_if_not(file.exists("mashr.example.RData"))
+  load("mashr.example.RData")
+  capture.output(out1 <- mixsqp(L,w))
+  out2 <- mixkwdual(L,w)
+  expect_equal(out1$value,out2$value,tolerance = 1e-8,scale = 1)
+  expect_equal(out1$x,out2$x,tolerance = 1e-4,scale = 1)
+})
+
+# This test comes from Issue #42.
+test_that(paste("mix-SQP converges, and gives solution that is equally as",
+                "good as KWDual for difficult NPMLE problem"),{
+  skip_if_not(file.exists("npmle.RData"))
+  load("npmle.RData")
+  capture.output(out1 <- mixsqp(L))
+  expect_equal(out1$status,mixsqp:::mixsqp.status.converged)
+  skip_if_mixkwdual_doesnt_work()
+  out2 <- mixkwdual(L)
+
+  # The likelihood surface is very "flat", so the solutions are not
+  # expected to be the same; however, the quality of the mix-SQP
+  # solution should be as good, or nearly as good, as the solution
+  # returned by the KWDual solver.
+  expect_equal(out1$value,out2$value,tolerance = 1e-4,scale = 1)
 })

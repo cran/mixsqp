@@ -2,35 +2,27 @@
 // system is singular or close to singular.
 #define ARMA_DONT_PRINT_ERRORS
 
-#include <RcppArmadillo.h>
-
-// This depends statement is needed to tell R where to find the
-// additional header files.
-//
-// [[Rcpp::depends(RcppArmadillo)]]
-//
+#include "objective.h"
+#include "mixem.h"
 
 using namespace Rcpp;
 using namespace arma;
 
 // FUNCTION DECLARATIONS
 // ---------------------
-double compute_objective (const mat& L, const mat& U, const mat& V,
-			  const vec& w, const vec& x, const vec& z,
-			  const vec& e, bool usesvd);
-void   compute_grad      (const mat& L, const mat& U, const mat& V,
-			  const vec& w, const vec& x, const vec& e,
-			  vec& g, mat& H, mat& Z, bool usesvd);
-int    activesetqp       (const mat& H, const vec& g, vec& y, int maxiter,
-			  double zerosearchdir, double tol, double ainc);
-void   compute_activeset_searchdir (const mat& H, const vec& y, vec& p, mat& B,
-				    double ainc);
-int    backtracking_line_search (double f, const mat& L, const mat& U,
-				 const mat& V, const vec& w, const vec& z,
-				 const vec& g, const vec& x, const vec& y,
-				 const vec& e, bool usesvd, double suffdecr, 
-				 double beta, double amin, double& a,
-				 vec& xnew);
+void compute_grad (const mat& L, const mat& U, const mat& V, const vec& w,
+		   const vec& x, const vec& e, vec& g, mat& H, mat& Z,
+		   bool usesvd);
+int  activesetqp  (const mat& H, const vec& g, vec& y, int maxiter,
+		   double zerosearchdir, double tol, double ainc);
+void compute_activeset_searchdir (const mat& H, const vec& y, vec& p, mat& B,
+				  double ainc);
+int  backtracking_line_search (double f, const mat& L, const mat& U,
+			       const mat& V, const vec& w, const vec& z,
+			       const vec& g, const vec& x, const vec& y,
+			       const vec& e, bool usesvd, double suffdecr, 
+			       double beta, double amin, double& a, 
+			       vec& xnew);
 
 // FUNCTION DEFINITIONS
 // --------------------
@@ -39,12 +31,14 @@ int    backtracking_line_search (double f, const mat& L, const mat& U,
 // accompanying the mixsqp R function and, in particular, see how
 // mixsqp_rcpp is called inside the mixsqp function.
 // 
+// [[Rcpp::depends(RcppArmadillo)]]
 // [[Rcpp::export]]
 List mixsqp_rcpp (const arma::mat& L, const arma::mat& U, const arma::mat& V,
-		  const arma::vec& w, const arma::vec& z, const arma::vec& x0,
-		  bool usesvd, double convtolsqp, double convtolactiveset,
-		  double zerothresholdsolution, double zerothresholdsearchdir,
-		  double suffdecr, double stepsizereduce, double minstepsize,
+		  const arma::vec& w, const arma::vec& z, const arma::vec& x0, 
+		  bool usesvd, bool runem, double convtolsqp, 
+		  double convtolactiveset, double zerothresholdsolution, 
+		  double zerothresholdsearchdir, double suffdecr, 
+		  double stepsizereduce, double minstepsize,
 		  double identitycontribincrease, const arma::vec& eps,
 		  int maxitersqp, int maxiteractiveset, bool verbose) {
   
@@ -73,13 +67,16 @@ List mixsqp_rcpp (const arma::mat& L, const arma::mat& U, const arma::mat& V,
   
   // Initialize storage for matrices and vectors used in the
   // computations below.
+  vec  xold(m);
   vec  g(m);
   vec  ghat(m);
   mat  H(m,m);
-  uvec j(m);
+  uvec j0(m);
+  uvec j1(m);
   vec  y(m);
   vec  d(m);
   vec  xnew(m);
+  mat  P = L;
   mat  Z;
   if (usesvd)
     Z = L;
@@ -90,22 +87,33 @@ List mixsqp_rcpp (const arma::mat& L, const arma::mat& U, const arma::mat& V,
   // the maximum number of (outer loop) iterations.
   for (i = 0; i < maxitersqp; i++) {
 
+    // Store the current estimate of the mixture weights.
+    xold = x;
+    
+    // Perform a single EM update.
+    if (runem)
+      mixem_update(L,w,x,P);
+
+    // Find the zero (j0) and non-zero (j1) co-ordinates.
+    j0 = find(x <= zerothresholdsolution);
+    j1 = find(x > zerothresholdsolution);
+
     // Zero any co-ordinates that are below the specified threshold.
-    j = find(x <= zerothresholdsolution);
-    x(j).fill(0);
+    x(j0).fill(0);
     
     // Compute the value of the objective at x.
     obj(i) = compute_objective(L,U,V,w,x,z,eps,usesvd);
 
     // Compute the gradient and Hessian.
     compute_grad(L,U,V,w,x,eps,g,H,Z,usesvd);
-    
+
     // Report on the algorithm's progress. Here we compute: the
-    // smallest gradient value (gmin), which is used as a convergence
-    // criterion; and the number of nonzeros in the solution (nnz).
-    // Note that only the dual residuals (gmin's) corresponding to the
-    // nonzero co-ordinates are relevant.
-    gmin(i) = 1 + g.min();
+    // smallest gradient value, or, equivalently, dual residual,
+    // corresponding to the nonzero co-ordinates (gmin), which is used
+    // as a convergence criterion; and the number of nonzeros in the
+    // solution (nnz). Note that only the dual residuals (gmin's)
+    // corresponding to the nonzero co-ordinates are relevant.
+    gmin(i) = 1 + g(j1).min();
     nnz(i)  = sum(x > 0);
     if (verbose) {
       if (i == 0)
@@ -120,11 +128,7 @@ List mixsqp_rcpp (const arma::mat& L, const arma::mat& U, const arma::mat& V,
     // Check convergence. Convergence is reached with the maximum dual
     // residual is small. The negative of "gmin" is also the maximum
     // dual residual (denoted as "rdual" on p. 609 of Boyd &
-    // Vandenberghe, "Convex Optimization", 2009). Although "gmin"
-    // here includes both zero (active) and non-zero (inactive)
-    // co-ordinates, this condition is trivially satisfied for the
-    // zero co-ordinates as the gradient must be non-negative for
-    // these co-ordinates.
+    // Vandenberghe, "Convex Optimization", 2009).
     if (gmin(i) >= -convtolsqp) {
       status = 0;
       i++;
@@ -142,14 +146,20 @@ List mixsqp_rcpp (const arma::mat& L, const arma::mat& U, const arma::mat& V,
     nqp(i) = (double) activesetqp(H,ghat,y,maxiteractiveset,
 				  zerothresholdsearchdir,convtolactiveset,
 				  identitycontribincrease);
-    
+    // Extra code used to diagnose line search issues:
+    //
+    //   if (verbose)
+    //     Rprintf("%0.2e\n",norm(x - y,"inf"));
+    // 
+
     // Run backtracking line search.
     nls(i) = (double) backtracking_line_search(obj(i),L,U,V,w,z,g,x,y,eps,
 					       usesvd,suffdecr,stepsizereduce,
 					       minstepsize,stepsize(i),xnew);
     
-    // Update the solution.
-    d       = abs(x - xnew);
+    // Update the solution, and store the largest change in the
+    // mixture weights.
+    d       = abs(xnew - xold);
     dmax(i) = d.max();
     x       = xnew;
   }
@@ -177,24 +187,9 @@ inline double min (double a, double b) {
   return y;
 }
 
-// Compute the value of the (unmodified) objective at x.
-double compute_objective (const mat& L, const mat& U, const mat& V,
-			  const vec& w, const vec& x, const vec& z,
-			  const vec& e, bool usesvd) {
-  vec u;
-  if (usesvd)
-    u = U*(trans(V)*x);
-  else
-    u = L*x;
-  u += e;
-  if (u.min() <= 0)
-    stop("Objective is -Inf");
-  return -sum(w % (z + log(u)));
-}
-
 // Compute the gradient and Hessian of the (unmodified) objective at x.
 void compute_grad (const mat& L, const mat& U, const mat& V, const vec& w,
-		   const vec& x, const vec& e, vec& g, mat& H, mat& Z,
+		   const vec& x, const vec& e, vec& g, mat& H, mat& Z, 
 		   bool usesvd) {
   vec u;
   if (usesvd) {
@@ -276,7 +271,7 @@ int activesetqp (const mat& H, const vec& g, vec& y, int maxiter,
     add_to_working_set = false;
     
     // Check that the search direction is close to zero.
-    if ((p.max() <= zerosearchdir) && (-p.min() <= zerosearchdir)) {
+    if (norm(p,"inf") <= zerosearchdir) {
 
       // Calculate b for all co-ordinates.
       b = g + H*y;
@@ -347,10 +342,10 @@ inline double init_hessian_correction (const mat& H, double a0) {
 
 // This implements Algorithm 3.3, "Cholesky with added multiple of the
 // identity", from Nocedal & Wright, 2nd ed, p. 51.
-void compute_activeset_searchdir (const mat& H, const vec& y, vec& p,
+void compute_activeset_searchdir (const mat& H, const vec& y, vec& p, 
 				  mat& B, double ainc) {
   double a0   = 1e-15;
-  double amax = 1;
+  double amax = 1e15;
   int    n    = y.n_elem;
   mat    I(n,n,fill::eye);
   mat    R(n,n);
@@ -368,16 +363,16 @@ void compute_activeset_searchdir (const mat& H, const vec& y, vec& p,
     // Attempt to compute the Cholesky factorization of the modified
     // Hessian. If this fails, increase the contribution of the
     // identity matrix in the modified Hessian.
-    if (chol(R,B) || (a*ainc > amax))
+    if (a*ainc > amax)
       break;
-    else if (a*ainc > amax)
+    else if (chol(R,B))
       break;
     else if (a <= 0)
       a = a0;
     else
       a *= ainc;
   }
-  
+
   // Compute the search direction using the modified Hessian.
   p = solve(B,-y);
 }
@@ -389,7 +384,7 @@ int backtracking_line_search (double f, const mat& L, const mat& U,
 			      const mat& V, const vec& w, const vec& z,
 			      const vec& g, const vec& x, const vec& y,
 			      const vec& e, bool usesvd, double suffdecr, 
-			      double beta, double amin, double& a,
+			      double beta, double amin, double& a, 
 			      vec& xnew) {
   int    k;
   double afeas;
@@ -409,7 +404,7 @@ int backtracking_line_search (double f, const mat& L, const mat& U,
 
     // Set the initial step size.
     a = min(1,afeas);
-    
+
     // Iteratively reduce the step size until either (1) we can't reduce
     // any more (because we have hit the minimum step size constraint),
     // or (2) the new candidate solution satisfies the "sufficient
@@ -423,9 +418,9 @@ int backtracking_line_search (double f, const mat& L, const mat& U,
       // sufficient decrease condition, and remains feasible. If so,
       // accept this candidate solution.
       if ((xnew.min() >= 0) &&
-  	 (fnew + sum(xnew) <= f + sum(x) + suffdecr*a*dot(y - x,g + 1)))
+  	  (fnew + sum(xnew) <= f + sum(x) + suffdecr*a*dot(y - x,g + 1)))
         break;
-    
+
       // If we cannot decrease the step size further, terminate the
       // backtracking line search, and set the step size to be the
       // minimum step size.

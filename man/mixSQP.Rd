@@ -63,6 +63,12 @@ constraint; that is, the entries of \code{x} may not sum to 1.}
 \item{value}{The value of the objective function, \eqn{f(x)}, at
 \code{x}.}
 
+\item{grad}{The gradient of the objective function at \code{x}.}
+
+\item{hessian}{The Hessian of the objective function at
+\code{x}. The truncated SVD approximation of L is used to compute
+the Hessian when it is also used for mix-SQP.}
+
 \item{status}{A character string describing the status of the
 algorithm upon termination.}
 
@@ -111,7 +117,7 @@ data point \eqn{j}.
 
 The Expectation Maximization (EM) algorithm can be used to solve
 this optimization problem, but it is intolerably slow in many
-interesting cases, and mixsqp is much faster.
+interesting cases, and mixsqp is much faster. 
 
 A special feature of this optimization problem is that the gradient
 of the objective does not change with re-scaling; for example, if
@@ -138,6 +144,15 @@ multithreaded matrix computations to speed up \code{mixsqp} for
 large \code{L} matrices, but only when R has been configured with a
 multithreaded BLAS/LAPACK library (e.g., OpenBLAS).
 
+A "debugging mode" is provided to aid in reproducing convergence
+failures or other issues. When activated, mixsqp will generate an
+.RData file containing the exact \code{mixsqp} inputs, and will
+stop execution upon convergence failure. To activate the debugging
+mode, run \code{options(mixsqp.debug.mode = TRUE)} prior to calling
+\code{mixsqp}. By default, the output file is \code{mixsqp.RData};
+the file can be changed by setting the \code{"mixsqp.debug.file"}
+global option.
+
 The \code{control} argument is a list in which any of the
 following named components will override the default optimization
 algorithm settings (as they are defined by
@@ -152,13 +167,6 @@ for better stability of the optimization. When \code{log = TRUE},
 this setting is ignored becase the rows are already normalized.
 Note that the objective is computed on the original (unnormalized)
 matrix to make the results easier to interpret.}
-
-\item{force.sparse.init}{The computational complexity of the SQP
-updates grows rapidly by the number of nonzeros in the current
-solution estimate. When \code{force.sparse.init = TRUE}, and there
-are more than 20 nonzeros in the solution before beginning the SQP
-updates, only the 20 largest entries are kept, the rest are forced
-to zero.}
 
 \item{\code{tol.svd}}{Setting used to determine rank of truncated
 SVD approximation for L. The rank of the truncated singular value
@@ -240,8 +248,9 @@ iterations taken to solve each of the quadratic subproblems. If
 \code{min(20,1 + ncol(L))}.}
 
 \item{\code{numiter.em}}{Number of expectation maximization (EM)
-updates to perform prior to running mix-SQP. This can help ensure
-convergence of mix-SQP when the initial solution is very poor.}
+updates to perform prior to running mix-SQP. Although EM can often
+be slow to converge, this "pre-fitting" step can help to obtain a
+good initial estimate for mix-SQP at a small cost.}
 
 \item{\code{verbose}}{If \code{verbose = TRUE}, the algorithm's
 progress and a summary of the optimization settings are printed to
