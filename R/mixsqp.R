@@ -257,10 +257,11 @@ mixsqp.status.didnotrun      <- "SQP algorithm was not run"
 #'
 #' @references
 #' 
-#' Y. Kim, P. Carbonetto, M. Stephens and M. Anitescu (2018). A fast
+#' Y. Kim, P. Carbonetto, M. Stephens and M. Anitescu (2020). A fast
 #' algorithm for maximum likelihood estimation of mixture proportions
-#' using sequential quadratic programming. arXiv:1806.01412
-#' \url{https://arxiv.org/abs/1806.01412}.
+#' using sequential quadratic programming. \emph{Journal of
+#' Computational and Graphical Statistics} \bold{29},
+#' 261-273. \doi{10.1080/10618600.2019.1689985}
 #'
 #' @seealso \code{\link{mixobjective}}, \code{\link{mixkwdual}}
 #' 
@@ -444,7 +445,7 @@ mixsqp <- function (L, w = rep(1,nrow(L)), x0 = rep(1,ncol(L)),
   
   # Print a brief summary of the analysis, if requested.
   if (verbose) {
-    cat(sprintf("Running mix-SQP algorithm 0.3-43 on %d x %d matrix\n",n,m))
+    cat(sprintf("Running mix-SQP algorithm 0.3-48 on %d x %d matrix\n",n,m))
     cat(sprintf("convergence tol. (SQP):     %0.1e\n",convtol.sqp))
     cat(sprintf("conv. tol. (active-set):    %0.1e\n",convtol.activeset))
     cat(sprintf("zero threshold (solution):  %0.1e\n",zero.threshold.solution))
